@@ -1,0 +1,18 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "h5repl"
+version = "0.1.0"
+description = "A CLI tool for interactive plotting with matplotlib"
+authors = [{name="bharraz"}]
+dependencies = ["matplotlib", "numpy", "h5py", "scipy", "rich", 
+    # readline for Unix-like systems (Linux/macOS)
+    "readline; platform_system != 'Windows'",
+
+    # pyreadline3 for Windows
+    "pyreadline3; platform_system == 'Windows'"]
+
+[project.scripts]
+h5repl = "h5repl.cli:main"
