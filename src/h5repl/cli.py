@@ -9,7 +9,10 @@ import h5py
 import rich
 from pathlib import Path
 import builtins
-from . import h5utils, globals 
+
+from prompt_toolkit import PromptSession
+from prompt_toolkit.shortcuts.prompt import CompleteStyle
+from . import h5utils, globals , PTKCompleter
 
 class H5REPL(code.InteractiveConsole):
     def __init__(self):
@@ -21,47 +24,12 @@ class H5REPL(code.InteractiveConsole):
         self.variables.update({k: v for k, v in vars(globals).items()})# if not k.startswith("_")})
 
         # Set up the custom completer function for tab completion
-        readline.set_completer(self.custom_completer)
-        readline.parse_and_bind("tab: complete")
+        self.session = PromptSession(completer=PTKCompleter.PTKCompleter(self.variables.keys()),
+                                        complete_while_typing=True,  
+                                        complete_style="READLINE_LIKE"  
+        )
 
         super().__init__(locals=self.variables)
-
-    def custom_completer(self, source, state):
-        """
-        Handles tab-autocompletion 
-        Only does tab-autocompletion for file ID's and functions
-        """
-        options = []
-        print(source)
-        if source.startswith("get_dataset"):
-            print("HER1")
-            args = re.split(",", source)
-            print(args)
-            if len(args) == 2: # If we're looking at the second argument
-                arg1 = re.split("\\(", args[0]).strip()
-                arg2 = args[1].strip()
-                file = globals.OPEN_FILES[arg1]
-                file.visit(lambda name : options.append(name) if isinstance(file[name], h5py.Dataset) and name.startswith(arg2) else None)
-                print("HERE")
-
-        # Only autocomplete on the end part of the string after a \s ( or , 
-        source = re.split("\\s|\\(|,|\\[", source)[-1] 
-        if source.startswith('np'): 
-            # np autocomplete
-            options += [name for name in dir(np) if name.startswith(source)]
-        elif source.startswith('plt'):  
-            # matplotlib.pyplot autocomplete
-            options += [name for name in dir(plt) if name.startswith(source)]
-        else:
-            # Custom autocomplete options
-            options += [name for name in self.variables.keys() if name.startswith(source)]
-            options += [name for name in globals.OPEN_FILES.keys() if name.startswith(source)]
-                
-        
-        if state < len(options):
-            return options[state]
-        else:
-            return None
 
     def preprocess(self, source):
         # Strip whitespace
@@ -101,22 +69,30 @@ class H5REPL(code.InteractiveConsole):
                 print(f"[Plot update skipped: {e}]")
         
         return result
+    
+    def interact(self, banner=None):
+        if banner:
+            print(banner)
+        while True:
+            try:
+                line = self.session.prompt(">>> ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            else:
+                more = self.push(line)
+                while more:
+                    try:
+                        line = self.session.prompt("... ")
+                    except (EOFError, KeyboardInterrupt):
+                        print()
+                        more = False
+                    else:
+                        more = self.push(line)
 
 
 def main():
-    
-    # x = np.linspace(0, 10, 100)
-    # y = np.sin(x)
-
-    # plt.plot(x, y)
-    # plt.show(block=False)  # Don’t block, keep REPL alive
-
-    # print("Interactive h5repl REPL started.")
-    # print("Try commands like: plt.grid(), plt.title('hi'), plt.plot(x, y**2)")
-    # print("Type exit() or Ctrl-D to quit.\n")
-
     help = ""
-
 
     # Override built in open function:
     builtins.open = h5utils.h5open
