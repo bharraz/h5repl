@@ -11,9 +11,7 @@ from rich.tree import Tree
 from rich.console import Console
 
 def _add_file(file, nickname):
-    """
-    Adds the passed file to OPEN_FILES in globals
-    """
+    """Adds the passed file to OPEN_FILES in globals"""
     OPEN_FILES[nickname] = file
 
 def h5open(ID, nickname=None, verbose=True):
@@ -50,6 +48,7 @@ def h5open(ID, nickname=None, verbose=True):
     return False
 
 def _get_file(filename):
+    """Takes a string or a h5File and returns the file or opens the file and returns it if possible"""
     if type(filename) == h5py.File:
         return filename
 

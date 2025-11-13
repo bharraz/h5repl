@@ -12,5 +12,5 @@ class Series():
 		self.files = [hfile]
     
 	def map_files(self, operation):
-		# Maps the operation onto all files
+		"""Maps the passed operation onto all files"""
 		return

@@ -12,9 +12,7 @@ class PTKCompleter(Completer):
         self.variables = variables
    
     def get_completions(self, document, complete_event):
-        """
-        Handles custom tab-autocompletion 
-        """
+        """Handles custom tab-autocompletion"""
         # Sometimes check full line
         full_line = document.text_before_cursor
         # Sometimes only autocomplete on the end part of the string after a \s ( [ or , 
