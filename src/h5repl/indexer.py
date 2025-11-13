@@ -1,5 +1,5 @@
+"""Optional indexer functionality -- to be configured per system"""
 from .globals import *
-
 import sqlite3
 import os
 import time
