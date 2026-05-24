@@ -96,7 +96,4 @@ class H5REPL(code.InteractiveConsole):
 def main():
     help = ""
 
-    # Override built in open function:
-    builtins.open = h5utils.h5open
-
-    H5REPL().interact(banner="") 
+    H5REPL().interact(banner="")

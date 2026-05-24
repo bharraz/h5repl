@@ -14,7 +14,7 @@ def _add_file(file, nickname):
     """Adds the passed file to OPEN_FILES in globals"""
     OPEN_FILES[nickname] = file
 
-def h5open(ID, nickname=None, verbose=True):
+def h5open(ID, nickname=None, verbose=True, **kwargs):
     """
     Opens h5 file given ID and adds it to currently open files. 
     Will check all directories found under [file_directories] in the config file

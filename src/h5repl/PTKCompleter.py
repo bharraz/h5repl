@@ -6,6 +6,9 @@ import matplotlib.pyplot as plt
 from prompt_toolkit.completion import Completer, Completion
 from . import h5utils, globals
 
+#TODO:
+# After making an indexer, allow to autocomplete from indexed h5 files if symbol is 'open'
+
 class PTKCompleter(Completer):
     def __init__(self, variables):
         """Variables is a list of relevant symbols to be considered for autocomplete"""
@@ -44,6 +47,7 @@ class PTKCompleter(Completer):
             options += [name for name in self.variables if name.startswith(last_symbol)]
             options += [name for name in globals.OPEN_FILES.keys() if name.startswith(last_symbol)]
          
-        # Yield all matches
-        for option in sorted(set(options)):
+        # Filter out symbols starting with an underscore
+        filtered_options = [option for option in set(options) if not option.startswith('_')]
+        for option in sorted(filtered_options):
             yield Completion(option, start_position=-len(last_symbol))

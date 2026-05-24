@@ -74,4 +74,4 @@ Tab-completion is enabled in the REPL for all available commands, variables, and
 
 ---
 
-For more, see the docstrings in each function or type `help(function_name)` in the REPL.
+In the REPL, see the docstrings in each function by just typing the function name or type `help()` to start an interactive help prompt.
