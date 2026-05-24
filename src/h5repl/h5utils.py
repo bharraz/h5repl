@@ -10,6 +10,12 @@ from .globals import *
 from rich.tree import Tree
 from rich.console import Console
 
+## FOR GOLD UTILS:
+# eid = get_dataset(f, "expid")
+# params = json.loads(eid)['arguments']
+# keep_global_on = params['Keep Global On']
+## 
+
 def _add_file(file, nickname):
     """Adds the passed file to OPEN_FILES in globals"""
     OPEN_FILES[nickname] = file
