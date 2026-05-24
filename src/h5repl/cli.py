@@ -4,7 +4,6 @@ import numpy as np
 import code
 import inspect
 import re
-import readline
 import h5py
 import rich
 from pathlib import Path
@@ -32,6 +31,7 @@ class H5REPL(code.InteractiveConsole):
         super().__init__(locals=self.variables)
 
     def preprocess(self, source):
+        """Preprocesses source string before it is sent to runsource"""
         # Strip whitespace
         source = source.strip()
 
@@ -41,6 +41,7 @@ class H5REPL(code.InteractiveConsole):
         return source
 
     def runsource(self, source, filename="<input>", symbol="single"):
+        """Modified function for running the line of code after preprocessing"""
         source = self.preprocess(source)
         print(source)
         # If input is just a name, it will try to match it to a function and print the docstring
@@ -71,6 +72,7 @@ class H5REPL(code.InteractiveConsole):
         return result
     
     def interact(self, banner=None):
+        """Overridden function for interactive session to make it a bit cleaner"""
         if banner:
             print(banner)
         while True:
