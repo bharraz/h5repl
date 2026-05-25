@@ -59,12 +59,11 @@ class H5REPL(code.InteractiveConsole):
         # Run the user’s code as normal
         result = super().runsource(source, filename, symbol)
         
-        # If there is an open figure, refresh it 
-        if plt.get_fignums() != []:
+        # If there is an open figure, refresh it
+        if plt.get_fignums():
             try:
-                print(plt.get_fignums())
-                plt.draw()       # Update plot elements
-                plt.pause(0.01)  # Allow GUI event loop to update
+                plt.draw()
+                plt.pause(0.01)
             except Exception as e:
                 print(f"[Plot update skipped: {e}]")
         
@@ -98,4 +97,8 @@ def main():
     # Override built in open function:
     builtins.open = h5utils.h5open
 
-    H5REPL().interact(banner="") 
+    repl = H5REPL()
+    try:
+        repl.interact(banner="")
+    finally:
+        h5utils.h5close_all() 

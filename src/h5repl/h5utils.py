@@ -51,6 +51,48 @@ def h5open(ID, nickname=None, verbose=True):
     print(f"File with ID {ID} not found.")
     return False
 
+def h5close(filename):
+    """Close one open HDF5 file and remove it from OPEN_FILES."""
+    if isinstance(filename, h5py.File):
+        file_obj = filename
+        key = None
+        for k, v in OPEN_FILES.items():
+            if v is file_obj:
+                key = k
+                break
+        try:
+            file_obj.close()
+        except Exception as e:
+            print(f"Error closing file object: {e}")
+            return False
+        if key is not None:
+            OPEN_FILES.pop(key, None)
+        return True
+
+    filename = str(filename)
+    if filename not in OPEN_FILES:
+        print(f"No open file named {filename}.")
+        return False
+
+    file_obj = OPEN_FILES.pop(filename)
+    try:
+        file_obj.close()
+        return True
+    except Exception as e:
+        print(f"Error closing {filename}: {e}")
+        return False
+
+
+def h5close_all():
+    """Close all open HDF5 files tracked in OPEN_FILES."""
+    for key, file_obj in list(OPEN_FILES.items()):
+        try:
+            file_obj.close()
+        except Exception as e:
+            print(f"Error closing {key}: {e}")
+    OPEN_FILES.clear()
+
+
 def _get_file(filename):
     """Takes a string or a h5File and returns the file or opens the file and returns it if possible"""
     if isinstance(filename, h5py.File):
