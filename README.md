@@ -11,7 +11,10 @@ From your project root, install in editable mode:
 ```sh
 pip install -e .
 ```
-
+If this doesn't work, make sure setuptools is updated:
+```sh
+pip install -U pip setuptools
+```
 ---
 
 ## Usage
