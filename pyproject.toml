@@ -7,7 +7,7 @@ name = "h5repl"
 version = "0.1.0"
 description = "A CLI tool for interactive plotting with matplotlib"
 authors = [{name="bharraz"}]
-dependencies = ["matplotlib", "numpy", "h5py", "scipy", "rich", "prompt_toolkit"]
+dependencies = ["matplotlib", "tomllib", "json", "numpy", "h5py", "scipy", "rich", "prompt_toolkit"]
 
 [project.scripts]
 h5repl = "h5repl.cli:main"

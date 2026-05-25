@@ -32,12 +32,12 @@ class H5REPL(code.InteractiveConsole):
 
     def preprocess(self, source):
         """Preprocesses source string before it is sent to runsource"""
-        # Strip whitespace
         source = source.strip()
-
         # Replace nicknames/IDs with strings
         for key in globals.OPEN_FILES.keys():
             source = re.sub(key, f"\"{key}\"", source)
+        # Quote unquoted second argument in get_dataset(NAME, path)
+        source = re.sub(r'get_dataset\(("[^"]*"|[^,]+),\s*([^"\s][^)]*?)\s*\)', r'get_dataset(\1, "\2")', source)
         return source
 
     def runsource(self, source, filename="<input>", symbol="single"):

@@ -26,7 +26,12 @@ Holds all global variables used in the repl such as config options or open files
 # Make it pull the latest from brassboard_artiq fitting functions
 # Make it have its config file tracked
 
-import tomllib
+import sys
+if sys.version_info >= (3, 11):
+    import tomllib
+else:
+    import tomli as tomllib
+
 from pathlib import Path
 
 # Dict of open files of format {'nickname' : h5py.File}

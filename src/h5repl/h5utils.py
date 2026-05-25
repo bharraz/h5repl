@@ -6,15 +6,13 @@ Contains all functions for opening hdf5 files and accessing data.
 import h5py
 import os
 import numpy as np
-from .globals import *
 from rich.tree import Tree
 from rich.console import Console
+from .globals import *
+from . import goldh5file
 
-## FOR GOLD UTILS:
-# eid = get_dataset(f, "expid")
-# params = json.loads(eid)['arguments']
-# keep_global_on = params['Keep Global On']
-## 
+_GROUP_TYPES = (h5py.Group, goldh5file._VirtualGroup)
+_DATASET_TYPES = (h5py.Dataset, goldh5file._VirtualDataset)
 
 def _add_file(file, nickname):
     """Adds the passed file to OPEN_FILES in globals"""
@@ -47,7 +45,7 @@ def h5open(ID, nickname=None, verbose=True):
                     full_fp = root + "/" + name
                     if verbose:
                         print(f"Opening File at {full_fp}")
-                    _add_file(h5py.File(full_fp, 'r'), ID if nickname == None else nickname)
+                    _add_file(goldh5file.GoldH5File(full_fp, 'r'), ID if nickname == None else nickname)
                     return True
     
     print(f"File with ID {ID} not found.")
@@ -55,12 +53,12 @@ def h5open(ID, nickname=None, verbose=True):
 
 def _get_file(filename):
     """Takes a string or a h5File and returns the file or opens the file and returns it if possible"""
-    if type(filename) == h5py.File:
+    if isinstance(filename, h5py.File):
         return filename
 
     filename = str(filename)
     if filename not in OPEN_FILES.keys():
-        print("NOT IN KEYS")
+        print(f"Could not find an open file with name {filename}, attempting to open it:")
         if h5open(filename) is False:
             print(f"Could not find file with name {filename}")
             return None
@@ -76,7 +74,7 @@ def _get_dataset_helper(h5obj, name):
     if name in h5obj: 
         return [h5obj[name]]
     for key, item in h5obj.items():
-        if isinstance(item, h5py.Group):
+        if isinstance(item, _GROUP_TYPES):
             found = found + _get_dataset_helper(item, name)
     return found
 
@@ -107,7 +105,7 @@ def get_dataset(filename, name):
     else:
         obj = obj[0]
 
-    if isinstance(obj, h5py.Dataset):
+    if isinstance(obj, _DATASET_TYPES):
         # Return value as numpy array or float if possible
         arr = obj[()]
         try:
@@ -138,7 +136,7 @@ def h5print(filename, skip_roots=None, start_root=None):
         for key, item in h5obj.items():
             if key in skip_roots:
                 continue  # Skip any roots specified by the user
-            if isinstance(item, h5py.Dataset):
+            if isinstance(item, _DATASET_TYPES):
                 shape = item.shape
                 dtype = item.dtype
                 if shape == () or shape == (1,):
@@ -149,7 +147,7 @@ def h5print(filename, skip_roots=None, start_root=None):
                     # Non-scalar dataset: print shape and dtype
                     label = f"[bold]{key}[/] [dim](Dataset, shape={shape}, dtype={dtype})[/]"
                 tree.add(label)
-            elif isinstance(item, h5py.Group):
+            elif isinstance(item, _GROUP_TYPES):
                 # Add group and recurse
                 label = f"[bold]{key}[/] (Group)"
                 branch = tree.add(label)
@@ -167,12 +165,12 @@ def h5print(filename, skip_roots=None, start_root=None):
             console.print("[red]start root not found[/red]")
             return
         # Set the root label for the tree
-        root_label = f"[bold]{getattr(root_obj, 'name', start_root)}[/] ({'Group' if isinstance(root_obj, h5py.Group) else 'Dataset'})"
+        root_label = f"[bold]{getattr(root_obj, 'name', start_root)}[/] ({'Group' if isinstance(root_obj, _GROUP_TYPES) else 'Dataset'})"
         tree = Tree(root_label)
-        if isinstance(root_obj, h5py.Group):
+        if isinstance(root_obj, _GROUP_TYPES):
             # If it's a group, print its subtree
             add_to_tree(root_obj, tree)
-        elif isinstance(root_obj, h5py.Dataset):
+        elif isinstance(root_obj, _DATASET_TYPES):
             # If it's a dataset, print its info
             shape = root_obj.shape
             dtype = root_obj.dtype
