@@ -43,7 +43,6 @@ class H5REPL(code.InteractiveConsole):
     def runsource(self, source, filename="<input>", symbol="single"):
         """Modified function for running the line of code after preprocessing"""
         source = self.preprocess(source)
-        print(source)
         # If input is just a name, it will try to match it to a function and print the docstring
         if source.isidentifier():
             try:

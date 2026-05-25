@@ -21,8 +21,6 @@ Holds all global variables used in the repl such as config options or open files
 #   See if you can do an update_plot call from anywhere
 
 # TODO:
-# Make gold system specific version:
-# Make open "flatten" expid
 # Make it pull the latest from brassboard_artiq fitting functions
 # Make it have its config file tracked
 

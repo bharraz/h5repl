@@ -96,8 +96,46 @@ class GoldH5File(h5py.File):
             params = json.loads(eid)["arguments"]
             # Expose the whole arguments dict as a virtual group at "params"
             self.add_virtual_dataset("params", params)
-        except Exception:
-            pass  # file has no expid, or wrong shape — silently skip
+        except Exception as e:
+            print(e)
+            print("Couldn't find expid")
+            pass  
+
+        try: 
+            THRESHOLD = 1
+            Y_MAX = 1
+
+            raw_counts = h5utils.get_dataset(self, "raw") # Try to get raw PMT counts
+            num_points = len(raw_counts)
+            num_shots = len(raw_counts["0"])
+            num_pmt = len(raw_counts["0"][0])
+
+            pmt_data = np.zeros((num_pmt, num_points))
+            pmt_err = np.zeros((num_pmt, num_points))
+
+            for i in range(0, num_points):
+                # point data is (num pmt * num shots)
+                point_data = np.array(raw_counts['{}'.format(i)]).transpose()
+                for pmt in range(0, len(point_data)):
+                    pmt_data[pmt][i] = np.mean(point_data[pmt] > THRESHOLD)
+
+            for pmt in range(num_pmt):
+                for i in range(num_points):
+                    perr = np.sqrt(pmt_data[pmt][i] * (Y_MAX-pmt_data[pmt][i])/num_shots)
+                    pmt_err[pmt][i] = 0.0 if perr == 0 else perr # I don't know why this is here
+            
+            # Add calculated populations and population errors
+            for pmt in range(num_pmt):
+                self.add_virtual_dataset(f"pops_{pmt - (num_pmt // 2)}", pmt_data[pmt])  
+                self.add_virtual_dataset(f"errs_{pmt - (num_pmt // 2)}", pmt_err[pmt])  
+            
+            # Add other helpful values
+            self.add_virtual_dataset("num_points", num_points)
+            self.add_virtual_dataset("num_shots", num_shots)
+
+        except Exception as e:
+            print(e)
+            print("Error finding/processing PMT data")
 
     # ── virtual dataset registry ──────────────────────────────────────────
 
