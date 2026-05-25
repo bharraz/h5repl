@@ -87,6 +87,7 @@ class _VirtualGroup:
 
 
 class GoldH5File(h5py.File):
+    #TODO: ADD JOINT POPULATIONS 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._virtual_datasets = {}

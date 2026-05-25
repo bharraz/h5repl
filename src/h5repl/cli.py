@@ -11,16 +11,18 @@ import builtins
 
 from prompt_toolkit import PromptSession
 from prompt_toolkit.shortcuts.prompt import CompleteStyle
-from . import h5utils, globals , PTKCompleter
+from . import h5utils, globals, PTKCompleter
 
 class H5REPL(code.InteractiveConsole):
     def __init__(self):
+        import h5repl
         # Add custom variables to be used in REPL environment
-        self.variables = {"plt": plt, "np": np, "help" : help}
-        # Add all public variables from h5utils
-        self.variables.update({k: v for k, v in vars(h5utils).items()})# if not k.startswith("_")})
-        # Add all public variables from globals
-        self.variables.update({k: v for k, v in vars(globals).items()})# if not k.startswith("_")})
+        self.variables = {"plt": plt, "np": np, "help": help}
+        # Auto-populate from package exports (exclude underscore-prefixed items)
+        self.variables.update({
+            k: v for k, v in vars(h5repl).items()
+            if not k.startswith("_") and k not in {"main", "cli"}
+        })
 
         # Set up the custom completer function for tab completion
         self.session = PromptSession(completer=PTKCompleter.PTKCompleter(self.variables.keys()),
@@ -60,12 +62,14 @@ class H5REPL(code.InteractiveConsole):
         result = super().runsource(source, filename, symbol)
         
         # If there is an open figure, refresh it
-        if plt.get_fignums():
-            try:
-                plt.draw()
-                plt.pause(0.01)
-            except Exception as e:
-                print(f"[Plot update skipped: {e}]")
+        # if plt.get_fignums():
+        #     try:
+        #         for fig_num in plt.get_fignums():
+        #             fig = plt.figure(fig_num)
+        #             fig.canvas.draw()
+        #             fig.canvas.flush_events()
+        #     except Exception as e:
+        #         print(f"[Plot update skipped: {e}]")
         
         return result
     

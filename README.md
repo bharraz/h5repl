@@ -57,14 +57,80 @@ In order to be able to open files, the config.toml file needs to have its [file_
 - `get_dataset(nickname, name)`  
   Get a dataset or group by name from an open file.
 
-### Plotting
-- Use `plt` (matplotlib) and `np` (numpy) as usual.
-- Plot data from datasets directly, e.g.:
-  ```python
-  arr = get_dataset('myfile', 'mydataset')
-  plt.plot(arr)
-  plt.show()
-  ```
+## Plotting
+
+The REPL maintains a single persistent plot window. Create one with `PlotManager`:
+
+```python
+plot = PlotManager()        # single axes
+plot = PlotManager(1, 2)    # two side-by-side subplots
+```
+
+Add data with `Series` objects:
+
+```python
+s = Series(x, y, label="signal", color="blue", marker='o')
+plot.add_series(s)          # adds to subplot 0 by default
+plot.add_series(s, ax=1)    # adds to subplot 1
+```
+
+`fig` and `axes` are fully public — any matplotlib call works directly:
+
+```python
+plot.axes[0].set_xlabel("frequency (Hz)")
+plot.axes[0].set_yscale("log")
+plot.fig.suptitle("experiment 42")
+```
+
+Raw `plt.` calls also work and will update the figure automatically after each
+REPL line. Call `plot.replot()` to force a full redraw, or `plot.clear()` to
+wipe all series.
+
+---
+
+## Fitting
+
+Wrap any fit function with `FitObj` to manage parameters and run fits:
+
+```python
+def decay_sine(x, amp, omega, tau, background):
+    return -amp/2 * np.cos(omega * x) * np.exp(-x / tau) + background
+
+fit = FitObj(decay_sine)
+```
+
+Set initial guesses and bounds by parameter name:
+
+```python
+fit.p0.amp       = 1.0
+fit.p0.tau       = 50e-6
+fit.bounds.tau   = (0, np.inf)
+fit.bounds.omega = (0, np.inf)
+```
+
+Fix parameters to constants so they are not fitted:
+
+```python
+fit.fix(background=0.0)
+fit.unfix("background")     # free it again later
+```
+
+Run the fit and inspect results:
+
+```python
+result = fit.fit(x, y)
+print(result)               # pretty table of params with uncertainties
+print(result.amp)           # 1.234(5)
+print(result.amp.a)         # 1.234  (central value)
+print(result.amp.s)         # 0.005  (1-sigma uncertainty)
+```
+
+Attach a fit to a `Series` to plot the fit curve alongside the data:
+
+```python
+s = Series(x, y, label="data", fit=fit)
+plot.add_series(s)
+```
 
 ### Other Utilities
 - `CFG`  
