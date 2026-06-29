@@ -44,3 +44,8 @@ PKG_ROOT = Path(__file__).resolve().parent.parent.parent
 toml_path = PKG_ROOT / "config.toml"
 with open(toml_path, "rb") as f:
 	CFG = tomllib.load(f)
+
+USER_DIR = PKG_ROOT / "user"
+USER_DIR.mkdir(exist_ok=True)
+(USER_DIR / "figures").mkdir(exist_ok=True)
+(USER_DIR / "fits").mkdir(exist_ok=True)

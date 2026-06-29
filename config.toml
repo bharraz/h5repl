@@ -1,2 +1,2 @@
 [file_directories]
-base_directory = "/home/bahaa/Documents/WS/h5repl/data/"
+data = "./data"

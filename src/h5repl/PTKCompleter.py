@@ -4,7 +4,7 @@ import h5py
 import numpy as np
 import matplotlib.pyplot as plt
 from prompt_toolkit.completion import Completer, Completion
-from . import h5utils, globals, goldh5file
+from . import h5utils, globals, goldh5file, session as _session
 
 class PTKCompleter(Completer):
     def __init__(self, variables):
@@ -19,9 +19,20 @@ class PTKCompleter(Completer):
         last_symbol = re.split(r"\s|\(|,|\[", full_line)[-1] 
 
         options = []
+        # Autocomplete session names for load_session / save_session
+        session_match = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
+        if session_match:
+            prefix = session_match.group(1)
+            sf = _session._sessions_file()
+            if sf.exists():
+                names = re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())
+                options += [n for n in names if n.startswith(prefix)]
+            for option in sorted(set(options)):
+                yield Completion(option, start_position=-len(prefix))
+            return
+
         # Autocomplete with dataset names if doing get_dataset
         matches = re.match(r'get_dataset\(\s*([^,]+?)\s*,\s*["\']?(.*?)["\']?\s*$', full_line)
-        # matches = re.match(r"get_dataset\(\s*([^,]+?)\s*,\s*(.*?)\s*$", full_line)
         if matches:
             try:
                 arg1, arg2 = matches.groups()

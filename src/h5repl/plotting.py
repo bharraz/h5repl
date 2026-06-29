@@ -98,4 +98,4 @@ class PlotManager:
             if any(s.label for s in self.series[i]):
                 ax.legend()
         self.fig.canvas.draw()
-        self.fig.canvas.flush_events()
+        plt.pause(0.001)

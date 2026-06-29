@@ -1,33 +1,30 @@
 """Command-line interface entry point for h5repl"""
+import matplotlib
+matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 import code
 import inspect
 import re
-import h5py
-import rich
-from pathlib import Path
-import builtins
-
 from prompt_toolkit import PromptSession
-from prompt_toolkit.shortcuts.prompt import CompleteStyle
-from . import h5utils, globals, PTKCompleter
+from . import h5utils, globals, PTKCompleter, session as _session
+
+_META_PREFIXES = tuple(_session._META_COMMANDS)
+
 
 class H5REPL(code.InteractiveConsole):
     def __init__(self):
         import h5repl
-        # Add custom variables to be used in REPL environment
         self.variables = {"plt": plt, "np": np, "help": help}
-        # Auto-populate from package exports (exclude underscore-prefixed items)
         self.variables.update({
             k: v for k, v in vars(h5repl).items()
             if not k.startswith("_") and k not in {"main", "cli"}
         })
 
-        # Set up the custom completer function for tab completion
-        self.session = PromptSession(completer=PTKCompleter.PTKCompleter(self.variables.keys()),
-                                        complete_while_typing=True,  
-                                        complete_style="READLINE_LIKE"  
+        self.session = PromptSession(
+            completer=PTKCompleter.PTKCompleter(self.variables.keys()),
+            complete_while_typing=True,
+            complete_style="READLINE_LIKE"
         )
 
         super().__init__(locals=self.variables)
@@ -35,17 +32,20 @@ class H5REPL(code.InteractiveConsole):
     def preprocess(self, source):
         """Preprocesses source string before it is sent to runsource"""
         source = source.strip()
-        # Replace nicknames/IDs with strings
+        # Rewrite bare open(...) → h5open(...) before builtins can intercept it
+        source = re.sub(r'(?<![.\w])open\(', 'h5open(', source)
         for key in globals.OPEN_FILES.keys():
             source = re.sub(key, f"\"{key}\"", source)
-        # Quote unquoted second argument in get_dataset(NAME, path)
         source = re.sub(r'get_dataset\(("[^"]*"|[^,]+),\s*([^"\s][^)]*?)\s*\)', r'get_dataset(\1, "\2")', source)
+        # Auto-quote bare session names: load_session(name) → load_session("name")
+        source = re.sub(r'\b((?:load|save)_session)\(([^"\'\s)][^)]*)\)', r'\1("\2")', source)
         return source
 
     def runsource(self, source, filename="<input>", symbol="single"):
         """Modified function for running the line of code after preprocessing"""
         source = self.preprocess(source)
-        # If input is just a name, it will try to match it to a function and print the docstring
+
+        # If input is just a name and callable, print docstring instead of executing
         if source.isidentifier():
             try:
                 obj = eval(source, self.locals)
@@ -54,25 +54,29 @@ class H5REPL(code.InteractiveConsole):
                     print(f"\nDocstring for {source}:\n{'-'*40}")
                     print(doc or "(No docstring available)")
                     print("-"*40 + "\n")
-                    return False  # Don’t treat it as code
+                    return False
             except Exception:
-                pass  # fall back to normal execution
+                pass
 
-        # Run the user’s code as normal
         result = super().runsource(source, filename, symbol)
-        
-        # If there is an open figure, refresh it
-        # if plt.get_fignums():
-        #     try:
-        #         for fig_num in plt.get_fignums():
-        #             fig = plt.figure(fig_num)
-        #             fig.canvas.draw()
-        #             fig.canvas.flush_events()
-        #     except Exception as e:
-        #         print(f"[Plot update skipped: {e}]")
-        
+
+        # Record completed, non-trivial, non-meta blocks for save_session
+        stripped = source.strip()
+        if (not result
+                and stripped
+                and not stripped.isidentifier()
+                and not stripped.startswith(_META_PREFIXES)):
+            _session.record(source)
+
+        # Give Tk event loop time to render any open figures
+        if plt.get_fignums():
+            try:
+                plt.pause(0.001)
+            except Exception:
+                pass
+
         return result
-    
+
     def interact(self, banner=None):
         """Overridden function for interactive session to make it a bit cleaner"""
         if banner:
@@ -96,13 +100,17 @@ class H5REPL(code.InteractiveConsole):
 
 
 def main():
-    help = ""
-
-    # Override built in open function:
-    builtins.open = h5utils.h5open
+    plt.ion()
 
     repl = H5REPL()
+
+    # Inject session management as closures so load_session has the REPL namespace
+    repl.locals['save_session'] = _session.save_session
+    repl.locals['load_session'] = lambda name: _session.load_session(name, repl.locals)
+    repl.locals['list_sessions'] = _session.list_sessions
+    repl.locals['clear_history'] = _session.clear_history
+
     try:
         repl.interact(banner="")
     finally:
-        h5utils.h5close_all() 
+        h5utils.h5close_all()
