@@ -68,10 +68,18 @@ class H5REPL(code.InteractiveConsole):
                 and not stripped.startswith(_META_PREFIXES)):
             _session.record(source)
 
-        # Give Tk event loop time to render any open figures
+        # Inject any newly created PlotManagers into the REPL namespace
+        for name, mgr in globals.PLOT_MANAGERS.items():
+            if name not in self.locals:
+                self.locals[name] = mgr
+
+        # Redraw any open figures without entering a nested Tk event loop
         if plt.get_fignums():
             try:
-                plt.pause(0.001)
+                for num in plt.get_fignums():
+                    fig = plt.figure(num)
+                    fig.canvas.draw_idle()
+                    fig.canvas.flush_events()
             except Exception:
                 pass
 

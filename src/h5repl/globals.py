@@ -34,7 +34,10 @@ from pathlib import Path
 
 # Dict of open files of format {'nickname' : h5py.File}
 # 'nickname' is by default just the RID of the experiment
-OPEN_FILES = dict() 
+OPEN_FILES = dict()
+
+# Dict of active PlotManagers of format {'pm1': PlotManager, ...}
+PLOT_MANAGERS = dict()
 
 # Dictionary of config options found in the config.toml file
 CFG = dict()

@@ -45,11 +45,12 @@ def h5open(ID, nickname=None, verbose=True):
                     full_fp = root + "/" + name
                     if verbose:
                         print(f"Opening File at {full_fp}")
-                    _add_file(goldh5file.GoldH5File(full_fp, 'r'), ID if nickname == None else nickname)
-                    return True
-    
+                    key = ID if nickname is None else nickname
+                    _add_file(goldh5file.GoldH5File(full_fp, 'r'), key)
+                    return OPEN_FILES[key]
+
     print(f"File with ID {ID} not found.")
-    return False
+    return None
 
 def h5close(filename):
     """Close one open HDF5 file and remove it from OPEN_FILES."""
@@ -101,7 +102,7 @@ def _get_file(filename):
     filename = str(filename)
     if filename not in OPEN_FILES.keys():
         print(f"Could not find an open file with name {filename}, attempting to open it:")
-        if h5open(filename) is False:
+        if not h5open(filename):
             print(f"Could not find file with name {filename}")
             return None
 

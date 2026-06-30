@@ -43,10 +43,21 @@ class PTKCompleter(Completer):
                 file.visititems(find_matching_datasets)
             except Exception as e:
                 print(f"\nAutocomplete error: {e}")
-        elif last_symbol.startswith('np'): 
+        elif re.match(r'^(\w+)\.', last_symbol):
+            # Tab-complete attributes on any known PlotManager (e.g. pm1.<TAB>)
+            m = re.match(r'^(\w+)\.(\w*)$', last_symbol)
+            if m:
+                obj_name, attr_prefix = m.groups()
+                if obj_name in globals.PLOT_MANAGERS:
+                    from .plotting import PlotManager
+                    attrs = (set(PlotManager._DISPLAY) | set(PlotManager._SCALE)
+                             | {'series', 'axes', 'fig', 'replot', 'clear',
+                                'add_series', 'add_series_batch'})
+                    options += [obj_name + '.' + a for a in attrs if a.startswith(attr_prefix)]
+        elif last_symbol.startswith('np'):
             # np autocomplete
             options += [name for name in dir(np) if name.startswith(last_symbol)]
-        elif last_symbol.startswith('plt'):  
+        elif last_symbol.startswith('plt'):
             # matplotlib.pyplot autocomplete
             options += [name for name in dir(plt) if name.startswith(last_symbol)]
         else:
