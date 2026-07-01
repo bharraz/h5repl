@@ -1,4 +1,6 @@
 import re
+from pathlib import Path
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 from .series import Series
 from . import globals as _globals
@@ -13,6 +15,39 @@ def _resolve_color_cycle():
             return list(cmap.colors)
         return [cmap(i / 8) for i in range(8)]
     return list(cycle)
+
+
+def save_style(name, rc):
+    """
+    Save a style preset to config.toml under [styles.<name>].
+
+        save_style('big_font', {'font.size': 16, 'lines.linewidth': 2.0})
+    """
+    import tomllib
+    import tomli_w
+
+    toml_path = _globals.PKG_ROOT / 'config.toml'
+    with open(toml_path, 'rb') as f:
+        cfg = tomllib.load(f)
+
+    cfg.setdefault('styles', {})[name] = rc
+    _globals.CFG.setdefault('styles', {})[name] = rc  # update live config too
+
+    with open(toml_path, 'wb') as f:
+        tomli_w.dump(cfg, f)
+    print(f"Saved style '{name}' to config.toml")
+
+
+def _resolve_style(name):
+    """Return rcParams dict for a named style from config.toml [styles], or {} if None/missing."""
+    if name is None:
+        return {}
+    styles = _globals.CFG.get('styles', {})
+    rc = styles.get(name)
+    if rc is None:
+        print(f"Warning: style '{name}' not found in config.toml [styles].")
+        return {}
+    return dict(rc)
 
 
 def _series_nickname(name=None, label=None, fallback='s'):
@@ -85,6 +120,7 @@ class PlotManager:
         object.__setattr__(self, '_color_idx', 0)
         object.__setattr__(self, '_xname', None)
         object.__setattr__(self, '_yname', None)
+        object.__setattr__(self, '_style', None)
 
     # -- attribute routing -----------------------------------------------------
 
@@ -203,14 +239,61 @@ class PlotManager:
         object.__setattr__(self, '_yname', None)
         self.replot()
 
+    def style(self, name):
+        """
+        Apply a named style preset from config.toml [styles] to this PlotManager.
+        The style re-applies on every replot, so it persists across data changes.
+        Use pm.style(None) to clear.
+
+            pm.style('publication')
+            pm.style(None)
+
+        Add presets to config.toml:
+            [styles.publication]
+            font.size = 12
+            lines.linewidth = 1.5
+            axes.linewidth = 1.0
+        """
+        object.__setattr__(self, '_style', name)
+        self.replot()
+
+    def export(self, filename=None, dest=None, dpi=300):
+        """
+        Save the figure to disk. Applies tight_layout before saving.
+        Supports any matplotlib format: pdf, png, svg, etc.
+
+            pm.export('rabi_flop.pdf')              # saves to figures_dir from config.toml
+            pm.export('rabi_flop.png', dpi=600)
+            pm.export('out.pdf', dest='/tmp/figs')  # explicit output directory
+            pm.export()                             # uses title as filename, saves as .pdf
+
+        Default output directory is set by figures_dir in config.toml.
+        """
+        if filename is None:
+            title = self._disp.get('title') or 'figure'
+            filename = title.replace(' ', '_').replace('|', '').replace('/', '_').strip('_') + '.pdf'
+        if dest is None:
+            cfg_dir = _globals.CFG.get('figures_dir')
+            dest = (_globals.PKG_ROOT / cfg_dir).resolve() if cfg_dir else _globals.USER_DIR / 'figures'
+        dest = Path(dest)
+        dest.mkdir(parents=True, exist_ok=True)
+        out = dest / filename
+        self.fig.tight_layout()
+        self.fig.savefig(out, dpi=dpi)
+        print(f"Saved -> {out}")
+        return out
+
     def replot(self):
         """Redraw all series, then apply display properties."""
-        self.ax.cla()
-        xscale = self._sc['xscale']
-        yscale = self._sc['yscale']
-        for s in self.series.values():
-            s.plot(self.ax, xscale=xscale, yscale=yscale)
-        self._apply_display()
+        style_name = object.__getattribute__(self, '_style')
+        style_rc = _resolve_style(style_name)
+        with mpl.rc_context(style_rc):
+            self.ax.cla()
+            xscale = self._sc['xscale']
+            yscale = self._sc['yscale']
+            for s in self.series.values():
+                s.plot(self.ax, xscale=xscale, yscale=yscale)
+            self._apply_display()
         self.fig.canvas.draw()
         self.fig.canvas.flush_events()
 

@@ -32,6 +32,12 @@ htmlcov/
 .coverage
 .tox/
 
+# Ignore user output files but keep the directory structure and sessions
+user/figures/*
+user/fits/*
+!user/figures/.gitkeep
+!user/fits/.gitkeep
+
 # Ignore user/editor files
 *.swp
 *.swo

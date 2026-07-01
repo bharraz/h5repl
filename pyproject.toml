@@ -15,6 +15,7 @@ dependencies = [
     "scipy>=1.14",
     "rich>=14.0",
     "prompt_toolkit>=3.0",
+    "tomli_w>=1.0",
 ]
 
 [project.scripts]

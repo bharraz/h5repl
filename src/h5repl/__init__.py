@@ -4,7 +4,7 @@ from .h5utils import h5open, get_dataset, h5print, h5close, h5close_all
 from .goldh5file import GoldH5File
 from .globals import OPEN_FILES, PLOT_MANAGERS, CFG, USER_DIR
 from .fitutils import FitObj, FitResult, Unc, sine_fun, decaying_cosine
-from .plotting import PlotManager
+from .plotting import PlotManager, save_style
 from .session import save_session, load_session, list_sessions, clear_history
 from .quickplot import quickplot
 from . import h5utils
@@ -87,7 +87,7 @@ def help_repl():
 
 -- Tips -------------------------------------------------------------------
   * Tab-completion works for everything, including pm.pmt0.<TAB>
-  * Typing a function name alone (e.g. quickplot) prints its docstring
+  * Add ; to see docs for anything: quickplot;  pm1.pmt0;
   * Closing a plot window auto-removes its PlotManager
   * open(103550) is silently rewritten to h5open(103550)
 """)
@@ -113,6 +113,7 @@ __all__ = [
     "decaying_cosine",
     # plotting
     "PlotManager",
+    "save_style",
     # session management
     "save_session",
     "load_session",
