@@ -3,9 +3,11 @@ h5utils.py
 Contains all functions for opening hdf5 files and accessing data.
 """
 
+import re
 import h5py
 import os
 import numpy as np
+from pathlib import Path
 from rich.tree import Tree
 from rich.console import Console
 from .globals import OPEN_FILES, CFG
@@ -35,6 +37,43 @@ def h5open(ID, nickname=None, verbose=True):
                     return OPEN_FILES[key]
     print(f"File with ID {ID} not found.")
     return None
+
+
+def browse(nickname=None):
+    """
+    Open a file-browser dialog to select an HDF5 file, then open it.
+    The file is stored in OPEN_FILES under its RID (leading digits of the
+    filename) or under nickname if provided.
+
+        f = browse()
+        f = browse(nickname='ref')
+        quickplot(browse())
+    """
+    import tkinter as tk
+    from tkinter import filedialog
+
+    root = tk.Tk()
+    root.withdraw()
+    root.call('wm', 'attributes', '.', '-topmost', True)
+    path = filedialog.askopenfilename(
+        parent=root,
+        title='Open HDF5 file',
+        filetypes=[('HDF5 files', '*.h5 *.hdf5'), ('All files', '*.*')],
+    )
+    root.destroy()
+
+    if not path:
+        print('No file selected.')
+        return None
+
+    stem = Path(path).stem
+    m = re.match(r'^(\d+)', stem)
+    key = nickname if nickname else (m.group(1) if m else stem)
+
+    print(f"Opening {path}")
+    f = goldh5file.GoldH5File(path, 'r')
+    OPEN_FILES[key] = f
+    return f
 
 
 def h5close(filename):

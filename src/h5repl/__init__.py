@@ -1,6 +1,6 @@
 # h5repl package init
 
-from .h5utils import h5open, get_dataset, h5print, h5close, h5close_all
+from .h5utils import h5open, browse, get_dataset, h5print, h5close, h5close_all
 from .goldh5file import GoldH5File
 from .globals import OPEN_FILES, PLOT_MANAGERS, CFG, USER_DIR
 from .fitutils import (FitObj, FitResult, Unc,
@@ -37,6 +37,8 @@ def help_repl():
 -- Files ------------------------------------------------------------------
   h5open(103550)                  open file by RID (searches config dirs)
   h5open(103550, nickname='rabi') open under custom name
+  browse()                        open a file-browser dialog to pick an .h5 file
+  browse(nickname='ref')          open under custom name
   h5print(103550)                 explore file structure
   h5print(103550, start_root='datasets/scan')   show subtree
   get_dataset(103550, 'duration') read a dataset by name (recursive search)
@@ -128,6 +130,7 @@ def help_repl():
 __all__ = [
     # h5 utilities
     "h5open",
+    "browse",
     "get_dataset",
     "h5print",
     "h5close",
