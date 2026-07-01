@@ -19,10 +19,11 @@ class PTKCompleter(Completer):
         m = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
         if m:
             prefix = m.group(1)
-            sf = _session._sessions_file()
+            names = list(_session._BUILTIN_SESSIONS)
+            sf = _session._resolve_sessions_file()
             if sf.exists():
-                names = re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())  # def blocks
-                options = [n for n in names if n.startswith(prefix)]
+                names += re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())
+            options = [n for n in names if n.startswith(prefix)]
             for opt in sorted(set(options)):
                 yield Completion(opt, start_position=-len(prefix))
             return

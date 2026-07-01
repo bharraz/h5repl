@@ -264,14 +264,81 @@ class FitObj:
 
 
 ############################
-# Built-in fitting functions:
+# Built-in fitting functions
 ############################
 
+# All functions have signature f(x, param1, param2, ...) and work directly with FitObj.
+# Parameter order convention: shape params first, then position (center/offset/delay), then amplitude, then width/decay.
+
+# -- general curves -----------------------------------------------------------
+
+def linear(x, slope, intercept):
+    """slope * x + intercept"""
+    return slope * x + intercept
+
+
+def quadratic(x, scale, center, offset):
+    """offset + scale * (x - center)^2    (scale < 0 gives inverted parabola)"""
+    return offset + scale * (x - center) ** 2
+
+
+def exp_decay(x, floor, amp, tau):
+    """floor + amp * exp(-x / tau)"""
+    return floor + amp * np.exp(-x / tau)
+
+
+# -- peaks --------------------------------------------------------------------
+
+def lorentzian(x, center, floor, amp, fwhm):
+    """Lorentzian: floor + amp * (fwhm/2)^2 / ((x - center)^2 + (fwhm/2)^2)"""
+    hwhm2 = (fwhm / 2) ** 2
+    return floor + amp * hwhm2 / ((x - center) ** 2 + hwhm2)
+
+
+def gaussian(x, center, floor, amp, fwhm):
+    """Gaussian parameterized by FWHM: floor + amp * exp(-(x-center)^2 / (2*sigma^2))
+    sigma = fwhm / (2*sqrt(2*ln2)) ~ fwhm / 2.355"""
+    sigma = fwhm / (2 * np.sqrt(2 * np.log(2)))
+    return floor + amp * np.exp(-(x - center) ** 2 / (2 * sigma ** 2))
+
+
+# -- Rabi oscillations --------------------------------------------------------
+
 def sine_fun(x, amp, freq, phi, offset):
-    """Sine wave: amp * sin(2pi.freq.x + phi) + offset"""
+    """amp * sin(2*pi*freq*x + phi) + offset    (freq in Hz if x in seconds)"""
     return amp * np.sin(2 * np.pi * freq * x + phi) + offset
 
 
+def rabi_flop(x, amp, omega, offset):
+    """Rabi population oscillation: offset + amp * sin(omega*x / 2)^2
+    pi_time = pi / omega;  amp is the full population swing"""
+    return offset + amp * np.sin(omega * x / 2) ** 2
+
+
 def decaying_cosine(x, amp, omega, phi, tau, offset):
-    """Decaying cosine: amp . exp(-x/tau) . cos(omega.x + phi) + offset"""
+    """Damped oscillation: amp * exp(-x/tau) * cos(omega*x + phi) + offset"""
     return amp * np.exp(-x / tau) * np.cos(omega * x + phi) + offset
+
+
+def rabi_spectroscopy(x, pulse_duration, scaling, floor, omega, center_freq):
+    """Generalized Rabi lineshape for frequency spectroscopy (fixed pulse time).
+    x and center_freq in Hz, omega in rad/s, pulse_duration in seconds.
+    Fix pulse_duration before fitting:  fit.fix(pulse_duration=50e-6)"""
+    omega2   = omega ** 2
+    omegaG2  = (2 * np.pi * (x - center_freq)) ** 2 + omega2   # generalized Rabi freq^2
+    return scaling * omega2 / omegaG2 * np.sin(np.sqrt(omegaG2) * pulse_duration / 2) ** 2 + floor
+
+
+# -- Ramsey -------------------------------------------------------------------
+
+def ramsey_phase(x, amp, offset, delay):
+    """Ramsey fringe vs phase (x in turns 0-1): offset + amp * cos(2*pi*(x - delay))
+    delay is the phase offset in turns"""
+    return offset + amp * np.cos(2 * np.pi * (x - delay))
+
+
+def ramsey_time(x, amp, omega, offset, delay, tau):
+    """Ramsey fringe vs time with exponential decay:
+    offset + amp * cos(omega*(x - delay)) * exp(-(x - delay) / tau)"""
+    dt = x - delay
+    return offset + amp * np.cos(omega * dt) * np.exp(-dt / tau)

@@ -111,7 +111,9 @@ class Series:
         """Fit this series' data, print the result, attach it, and replot."""
         kw = {}
         if self.yerr is not None:
-            kw = {'sigma': self.yerr, 'absolute_sigma': True}
+            yerr = self.yerr
+            if np.all(yerr > 0) and np.all(np.isfinite(yerr)):
+                kw = {'sigma': yerr, 'absolute_sigma': True}
         result = fit_obj.fit(self.x, self.y, **kw)
         print(result)
         self.fit = result  # triggers replot

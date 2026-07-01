@@ -217,6 +217,7 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
         s = Series(x_raw, y, yerr=yerr, label=s_label,
                    fit=fit if len(active_pmts) == 1 else None,
                    fmt=fmt, capsize=capsize, **kwargs)
+        object.__setattr__(s, '_file_id', file_id)   # for fit_spectroscopy param lookup
         new_series[f'pmt{pmt_idx}'] = s
 
     mgr._set_disp_silent(title=title, xlabel=xlabel, ylabel=ylabel)  # no replot yet

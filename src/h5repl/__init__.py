@@ -3,13 +3,22 @@
 from .h5utils import h5open, get_dataset, h5print, h5close, h5close_all
 from .goldh5file import GoldH5File
 from .globals import OPEN_FILES, PLOT_MANAGERS, CFG, USER_DIR
-from .fitutils import FitObj, FitResult, Unc, sine_fun, decaying_cosine
+from .fitutils import (FitObj, FitResult, Unc,
+                       linear, quadratic, exp_decay,
+                       lorentzian, gaussian,
+                       sine_fun, rabi_flop, decaying_cosine, rabi_spectroscopy,
+                       ramsey_phase, ramsey_time)
 from .plotting import PlotManager, save_style
+from .fitshorthands import (fit_rabi, fit_decaying_cosine,
+                             fit_lorentzian, fit_gaussian, fit_exp_decay,
+                             fit_ramsey_phase, fit_ramsey_time, fit_spectroscopy,
+                             fit_linear, fit_quadratic)
 from .session import save_session, load_session, list_sessions, clear_history
 from .quickplot import quickplot
 from . import h5utils
 from . import goldh5file
 from . import fitutils
+from . import fitshorthands
 from . import globals
 from . import plotting
 from . import series
@@ -74,9 +83,32 @@ def help_repl():
   result.amp                      access a param as Unc
   result.amp.a / result.amp.s     float value / std dev
 
-  Built-in functions:
+  Built-in fit functions (use with FitObj):
+    linear(x, slope, intercept)
+    quadratic(x, scale, center, offset)
+    exp_decay(x, floor, amp, tau)
+    lorentzian(x, center, floor, amp, fwhm)
+    gaussian(x, center, floor, amp, fwhm)
     sine_fun(x, amp, freq, phi, offset)
+    rabi_flop(x, amp, omega, offset)
     decaying_cosine(x, amp, omega, phi, tau, offset)
+    rabi_spectroscopy(x, pulse_duration, scaling, floor, omega, center_freq)
+    ramsey_phase(x, amp, offset, delay)
+    ramsey_time(x, amp, omega, offset, delay, tau)
+
+  Fit shorthands (auto-guess p0, dotted line, returns FitResult):
+    fit_rabi(series, *, amp, omega, offset)
+    fit_decaying_cosine(series, *, amp, omega, phi, tau, offset)
+    fit_lorentzian(series, *, center, floor, amp, fwhm)
+    fit_gaussian(series, *, center, floor, amp, fwhm)
+    fit_exp_decay(series, *, floor, amp, tau)
+    fit_ramsey_phase(series, *, amp, offset, delay)
+    fit_ramsey_time(series, *, amp, omega, offset, delay, tau)
+    fit_spectroscopy(series, [pulse_duration], *, scaling, floor, omega, center_freq)
+    fit_linear(series, *, slope, intercept)
+    fit_quadratic(series, *, scale, center, offset)
+  -> All keyword args are optional p0 overrides (None = auto-guessed from data)
+  -> Type  fit_rabi;  for full docstring with usage examples
 
 -- Sessions ---------------------------------------------------------------
   save_session(my_session)        save current REPL history to a session
@@ -105,12 +137,36 @@ __all__ = [
     "PLOT_MANAGERS",
     "CFG",
     "USER_DIR",
-    # fitting
+    # fitting infrastructure
     "FitObj",
     "FitResult",
     "Unc",
+    # general curves
+    "linear",
+    "quadratic",
+    "exp_decay",
+    # peaks
+    "lorentzian",
+    "gaussian",
+    # Rabi
     "sine_fun",
+    "rabi_flop",
     "decaying_cosine",
+    "rabi_spectroscopy",
+    # Ramsey
+    "ramsey_phase",
+    "ramsey_time",
+    # fit shorthands
+    "fit_rabi",
+    "fit_decaying_cosine",
+    "fit_lorentzian",
+    "fit_gaussian",
+    "fit_exp_decay",
+    "fit_ramsey_phase",
+    "fit_ramsey_time",
+    "fit_spectroscopy",
+    "fit_linear",
+    "fit_quadratic",
     # plotting
     "PlotManager",
     "save_style",
