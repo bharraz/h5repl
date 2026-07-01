@@ -8,10 +8,12 @@ __pycache__/
 # Ignore setuptools/distribution metadata
 *.egg-info/
 
-# Ignore HDF5 files
+# Ignore HDF5 files (except demo data bundled with the repo)
 *.h5
 *.hdf5
 *.he5
+!data/000103550-RamanScan.h5
+!data/000103551-RamseySeqScan.h5
 
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/

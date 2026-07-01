@@ -138,16 +138,16 @@ class GoldH5File(h5py.File):
             print(e)
             print("Error finding/processing PMT data")
 
-    # ── virtual dataset registry ──────────────────────────────────────────
+    # -- virtual dataset registry ------------------------------------------
 
     def add_virtual_dataset(self, name: str, value):
         """
-        Register a virtual dataset (or dict → VirtualGroup) under `name`.
+        Register a virtual dataset (or dict -> VirtualGroup) under `name`.
         Can be called after __init__ to attach more virtual datasets.
         """
         self._virtual_datasets[name] = _wrap(value, name=f"/{name}")
 
-    # ── transparent proxy to real + virtual ──────────────────────────────
+    # -- transparent proxy to real + virtual ------------------------------
 
     def __getitem__(self, key: str):
         # Virtual datasets shadow real ones (file is read-only anyway)

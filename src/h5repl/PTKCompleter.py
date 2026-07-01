@@ -1,70 +1,75 @@
 """Prompt toolkit (PTK) based autocomplete for expanded functionality"""
 import re
 import h5py
-import numpy as np
-import matplotlib.pyplot as plt
 from prompt_toolkit.completion import Completer, Completion
-from . import h5utils, globals, goldh5file, session as _session
+from . import globals, goldh5file, session as _session
+
 
 class PTKCompleter(Completer):
     def __init__(self, variables):
-        """Variables is a list of relevant symbols to be considered for autocomplete"""
+        # variables is the live REPL locals dict, not just keys
         self.variables = variables
-   
-    def get_completions(self, document, complete_event):
-        """Handles custom tab-autocompletion"""
-        # Sometimes check full line
-        full_line = document.text_before_cursor
-        # Sometimes only autocomplete on the end part of the string after a \s ( [ or , 
-        last_symbol = re.split(r"\s|\(|,|\[", full_line)[-1] 
 
+    def get_completions(self, document, complete_event):
+        full_line = document.text_before_cursor
+        last_token = re.split(r'[\s(,\[]', full_line)[-1]  # token after last delimiter
         options = []
-        # Autocomplete session names for load_session / save_session
-        session_match = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
-        if session_match:
-            prefix = session_match.group(1)
+
+        # session name completion
+        m = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
+        if m:
+            prefix = m.group(1)
             sf = _session._sessions_file()
             if sf.exists():
-                names = re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())
-                options += [n for n in names if n.startswith(prefix)]
-            for option in sorted(set(options)):
-                yield Completion(option, start_position=-len(prefix))
+                names = re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())  # def blocks
+                options = [n for n in names if n.startswith(prefix)]
+            for opt in sorted(set(options)):
+                yield Completion(opt, start_position=-len(prefix))
             return
 
-        # Autocomplete with dataset names if doing get_dataset
-        matches = re.match(r'get_dataset\(\s*([^,]+?)\s*,\s*["\']?(.*?)["\']?\s*$', full_line)
-        if matches:
-            try:
-                arg1, arg2 = matches.groups()
-                file = globals.OPEN_FILES[arg1]
-                def find_matching_datasets(name, obj):
-                    if isinstance(obj, (h5py.Dataset, goldh5file._VirtualDataset)) and name.startswith(arg2):
-                        options.append(name)
-                file.visititems(find_matching_datasets)
-            except Exception as e:
-                print(f"\nAutocomplete error: {e}")
-        elif re.match(r'^(\w+)\.', last_symbol):
-            # Tab-complete attributes on any known PlotManager (e.g. pm1.<TAB>)
-            m = re.match(r'^(\w+)\.(\w*)$', last_symbol)
-            if m:
-                obj_name, attr_prefix = m.groups()
-                if obj_name in globals.PLOT_MANAGERS:
-                    from .plotting import PlotManager
-                    attrs = (set(PlotManager._DISPLAY) | set(PlotManager._SCALE)
-                             | {'series', 'axes', 'fig', 'replot', 'clear',
-                                'add_series', 'add_series_batch'})
-                    options += [obj_name + '.' + a for a in attrs if a.startswith(attr_prefix)]
-        elif last_symbol.startswith('np'):
-            # np autocomplete
-            options += [name for name in dir(np) if name.startswith(last_symbol)]
-        elif last_symbol.startswith('plt'):
-            # matplotlib.pyplot autocomplete
-            options += [name for name in dir(plt) if name.startswith(last_symbol)]
+        # dataset name completion inside get_dataset(file, <TAB>)
+        m = re.match(r'get_dataset\(\s*([^,]+?)\s*,\s*["\']?(.*?)["\']?\s*$', full_line)
+        if m:
+            file_id, ds_prefix = m.group(1).strip('"\''), m.group(2)
+            f = globals.OPEN_FILES.get(file_id)
+            if f:
+                def _collect(name, obj):
+                    if isinstance(obj, (h5py.Dataset, goldh5file._VirtualDataset)):
+                        if name.startswith(ds_prefix):
+                            options.append(name)
+                try:
+                    f.visititems(_collect)
+                except Exception:
+                    pass
+
+        elif '.' in last_token:
+            # dotted access: resolve left side, dir() the result
+            obj_expr, attr_prefix = last_token.rsplit('.', 1)
+            obj = self._resolve(obj_expr)
+            if obj is not None:
+                attrs = self._attrs(obj)
+                options += [f"{obj_expr}.{a}" for a in attrs if a.startswith(attr_prefix)]
+
         else:
-            # Custom autocomplete options
-            options += [name for name in self.variables if name.startswith(last_symbol)]
-            options += [name for name in globals.OPEN_FILES.keys() if name.startswith(last_symbol)]
-         
-        # Yield all matches
-        for option in sorted(set(options)):
-            yield Completion(option, start_position=-len(last_symbol))
+            # bare token: all REPL names + open files + plot managers
+            universe = set(self.variables) | set(globals.OPEN_FILES) | set(globals.PLOT_MANAGERS)
+            options += [n for n in universe if n.startswith(last_token)]
+
+        for opt in sorted(set(options)):
+            yield Completion(opt, start_position=-len(last_token))
+
+    def _resolve(self, expr):
+        """Eval an expression in the live REPL namespace; return None on failure."""
+        try:
+            return eval(expr, dict(self.variables))  # snapshot to avoid mutation
+        except Exception:
+            return None
+
+    def _attrs(self, obj):
+        """Non-private attributes of obj; augmented for PlotManager virtual attrs."""
+        from .plotting import PlotManager
+        attrs = {a for a in dir(obj) if not a.startswith('_')}  # skip private
+        if isinstance(obj, PlotManager):
+            # __getattr__ exposes these but dir() misses them
+            attrs |= set(PlotManager._DISPLAY) | set(PlotManager._SCALE) | set(obj.series)
+        return attrs

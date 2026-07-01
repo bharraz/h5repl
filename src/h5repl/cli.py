@@ -1,4 +1,6 @@
 """Command-line interface entry point for h5repl"""
+import sys
+import asyncio
 import matplotlib
 matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
@@ -7,9 +9,23 @@ import code
 import inspect
 import re
 from prompt_toolkit import PromptSession
+from prompt_toolkit.patch_stdout import patch_stdout
 from . import h5utils, globals, PTKCompleter, session as _session
 
 _META_PREFIXES = tuple(_session._META_COMMANDS)
+
+
+async def _gui_pump():
+    """Pump matplotlib event loop at ~20 fps while the REPL waits for input."""
+    while True:
+        for num in plt.get_fignums():
+            try:
+                fig = plt.figure(num)
+                fig.canvas.draw_idle()
+                fig.canvas.flush_events()
+            except Exception:
+                pass
+        await asyncio.sleep(0.05)
 
 
 class H5REPL(code.InteractiveConsole):
@@ -22,7 +38,7 @@ class H5REPL(code.InteractiveConsole):
         })
 
         self.session = PromptSession(
-            completer=PTKCompleter.PTKCompleter(self.variables.keys()),
+            completer=PTKCompleter.PTKCompleter(self.variables),  # live dict for eval
             complete_while_typing=True,
             complete_style="READLINE_LIKE"
         )
@@ -32,35 +48,48 @@ class H5REPL(code.InteractiveConsole):
     def preprocess(self, source):
         """Preprocesses source string before it is sent to runsource"""
         source = source.strip()
-        # Rewrite bare open(...) → h5open(...) before builtins can intercept it
-        source = re.sub(r'(?<![.\w])open\(', 'h5open(', source)
-        for key in globals.OPEN_FILES.keys():
+        source = re.sub(r'(?<![.\w])open\(', 'h5open(', source)        # open -> h5open
+        for key in globals.OPEN_FILES:                                   # quote file IDs
             source = re.sub(key, f"\"{key}\"", source)
-        source = re.sub(r'get_dataset\(("[^"]*"|[^,]+),\s*([^"\s][^)]*?)\s*\)', r'get_dataset(\1, "\2")', source)
-        # Auto-quote bare session names: load_session(name) → load_session("name")
-        source = re.sub(r'\b((?:load|save)_session)\(([^"\'\s)][^)]*)\)', r'\1("\2")', source)
+        source = re.sub(r'get_dataset\(("[^"]*"|[^,]+),\s*([^"\s][^)]*?)\s*\)',
+                         r'get_dataset(\1, "\2")', source)               # quote dataset name
+        source = re.sub(r'\b((?:load|save)_session)\(([^"\'\s)][^)]*)\)',
+                         r'\1("\2")', source)                            # quote session name
         return source
 
     def runsource(self, source, filename="<input>", symbol="single"):
         """Modified function for running the line of code after preprocessing"""
         source = self.preprocess(source)
 
-        # If input is just a name and callable, print docstring instead of executing
+        stripped = source.rstrip()
+        if stripped.endswith(';'):                                   # trailing ; -> show docs
+            expr = stripped.rstrip(';').strip()
+            try:
+                obj = eval(expr, self.locals)
+                doc = inspect.getdoc(obj) if callable(obj) else None
+                print(f"\n{expr}:\n{'-'*40}")
+                print(doc if doc else repr(obj))
+                print('-'*40 + '\n')
+            except Exception:
+                pass
+            return False
+
         if source.isidentifier():
             try:
                 obj = eval(source, self.locals)
                 if callable(obj):
-                    doc = inspect.getdoc(obj)
-                    print(f"\nDocstring for {source}:\n{'-'*40}")
-                    print(doc or "(No docstring available)")
-                    print("-"*40 + "\n")
-                    return False
+                    sig = inspect.signature(obj)
+                    required = [p for p in sig.parameters.values()
+                                if p.default is inspect.Parameter.empty
+                                and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
+                    if not required:                                 # zero-arg callable -> run it
+                        obj()
+                        return False
             except Exception:
                 pass
 
         result = super().runsource(source, filename, symbol)
 
-        # Record completed, non-trivial, non-meta blocks for save_session
         stripped = source.strip()
         if (not result
                 and stripped
@@ -73,33 +102,22 @@ class H5REPL(code.InteractiveConsole):
             if name not in self.locals:
                 self.locals[name] = mgr
 
-        # Redraw any open figures without entering a nested Tk event loop
-        if plt.get_fignums():
-            try:
-                for num in plt.get_fignums():
-                    fig = plt.figure(num)
-                    fig.canvas.draw_idle()
-                    fig.canvas.flush_events()
-            except Exception:
-                pass
-
         return result
 
-    def interact(self, banner=None):
-        """Overridden function for interactive session to make it a bit cleaner"""
-        if banner:
-            print(banner)
-        while True:
-            try:
-                line = self.session.prompt(">>> ")
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
-            else:
+    async def interact_async(self):
+        """Async REPL loop - runs alongside _gui_pump so figures stay responsive."""
+        print("\nh5repl  |  type help_repl for reference  |  load_session(demo) to start\n")
+        with patch_stdout():
+            while True:
+                try:
+                    line = await self.session.prompt_async(">>> ")
+                except (EOFError, KeyboardInterrupt):
+                    print()
+                    break
                 more = self.push(line)
                 while more:
                     try:
-                        line = self.session.prompt("... ")
+                        line = await self.session.prompt_async("... ")
                     except (EOFError, KeyboardInterrupt):
                         print()
                         more = False
@@ -108,17 +126,31 @@ class H5REPL(code.InteractiveConsole):
 
 
 def main():
-    plt.ion()
+    # SelectorEventLoop is required on Windows for Tk + asyncio compatibility.
+    # ProactorEventLoop (the Windows default) conflicts with Tk's event handling.
+    if sys.platform == 'win32':
+        asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+    plt.ion()
     repl = H5REPL()
 
-    # Inject session management as closures so load_session has the REPL namespace
+    def _load_and_sync(name):
+        _session.load_session(name, repl.locals)
+        for mgr_name, mgr in globals.PLOT_MANAGERS.items():
+            if mgr_name not in repl.locals:
+                repl.locals[mgr_name] = mgr
+
     repl.locals['save_session'] = _session.save_session
-    repl.locals['load_session'] = lambda name: _session.load_session(name, repl.locals)
+    repl.locals['load_session'] = _load_and_sync
     repl.locals['list_sessions'] = _session.list_sessions
     repl.locals['clear_history'] = _session.clear_history
 
-    try:
-        repl.interact(banner="")
-    finally:
-        h5utils.h5close_all()
+    async def run():
+        gui = asyncio.create_task(_gui_pump())
+        try:
+            await repl.interact_async()
+        finally:
+            gui.cancel()
+            h5utils.h5close_all()
+
+    asyncio.run(run())

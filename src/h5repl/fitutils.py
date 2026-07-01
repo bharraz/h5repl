@@ -4,7 +4,7 @@ from math import floor, log10
 from scipy.optimize import curve_fit
 
 
-# ── Uncertainty arithmetic ────────────────────────────────────────────────────
+# -- Uncertainty arithmetic ----------------------------------------------------
 
 def format_unc(a, s):
     if s <= 0 or np.isnan(s):
@@ -83,12 +83,12 @@ class Unc:
         return Unc(a2 - self.a, np.sqrt(self.s**2 + s2**2))
 
 
-# ── Fit result ────────────────────────────────────────────────────────────────
+# -- Fit result ----------------------------------------------------------------
 
 class FitResult:
     """
     Holds the result of a curve fit. Parameters are accessible as attributes.
-    e.g. result.amp, result.tau — each is an Unc with .a and .s
+    e.g. result.amp, result.tau - each is an Unc with .a and .s
     """
     def __init__(self, fn, param_names, popt, pcov):
         self.fn = fn
@@ -102,7 +102,7 @@ class FitResult:
         self.xs = None
         self.ys = None
         self.ys_max = None
-        self.ys_max = None
+        self.ys_min = None
 
     def __getattr__(self, name):
         # Allow result.amp instead of result.params["amp"]
@@ -118,7 +118,7 @@ class FitResult:
         return "FitResult:\n" + "\n".join(lines)
 
 
-# ── Fit object ────────────────────────────────────────────────────────────────
+# -- Fit object ----------------------------------------------------------------
 
 class FitObj:
     """
@@ -264,5 +264,14 @@ class FitObj:
 
 
 ############################
-# Fitting functions (TEMP):
+# Built-in fitting functions:
 ############################
+
+def sine_fun(x, amp, freq, phi, offset):
+    """Sine wave: amp * sin(2pi.freq.x + phi) + offset"""
+    return amp * np.sin(2 * np.pi * freq * x + phi) + offset
+
+
+def decaying_cosine(x, amp, omega, phi, tau, offset):
+    """Decaying cosine: amp . exp(-x/tau) . cos(omega.x + phi) + offset"""
+    return amp * np.exp(-x / tau) * np.cos(omega * x + phi) + offset

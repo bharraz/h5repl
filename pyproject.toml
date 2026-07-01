@@ -7,7 +7,15 @@ name = "h5repl"
 version = "0.1.0"
 description = "A CLI tool for interactive plotting with matplotlib"
 authors = [{name="bharraz"}]
-dependencies = ["matplotlib", "tomllib", "json", "numpy", "h5py", "scipy", "rich", "prompt_toolkit"]
+requires-python = ">=3.11"
+dependencies = [
+    "numpy>=2.0",
+    "matplotlib>=3.9",
+    "h5py>=3.12",
+    "scipy>=1.14",
+    "rich>=14.0",
+    "prompt_toolkit>=3.0",
+]
 
 [project.scripts]
 h5repl = "h5repl.cli:main"

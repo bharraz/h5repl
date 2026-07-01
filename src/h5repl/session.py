@@ -1,7 +1,6 @@
 """Session recording and replay for h5repl."""
 
 import re
-import textwrap
 from pathlib import Path
 
 from .globals import USER_DIR
@@ -41,7 +40,7 @@ def save_session(name: str) -> None:
     Call clear_history() first to start a fresh recording.
     """
     if not _executed_lines:
-        print("Nothing to save — no commands recorded in this session.")
+        print("Nothing to save - no commands recorded in this session.")
         return
 
     sf = _sessions_file()
@@ -66,30 +65,41 @@ def save_session(name: str) -> None:
         new_content = content.rstrip("\n") + "\n\n" + new_func
 
     sf.write_text(new_content)
-    print(f"Saved session '{name}' → {sf}")
+    print(f"Saved session '{name}' -> {sf}")
+
+
+_BUILTIN_SESSIONS = {'demo'}
 
 
 def load_session(name: str, exec_locals: dict) -> None:
     """
     Replay a named session from user/sessions.py in the current REPL namespace.
+    Built-in sessions (e.g. 'demo') are loaded from the package itself.
     All variables and open files created by the session are available afterwards.
     """
+    # built-in sessions live in the package, not in user/sessions.py
+    if name in _BUILTIN_SESSIONS:
+        import importlib
+        mod = importlib.import_module(f'._{name}', package='h5repl')
+        getattr(mod, name)()
+        return
+
     sf = _sessions_file()
     if not sf.exists():
         print("No sessions file found. Save a session first with save_session('name').")
         return
 
     content = sf.read_text()
-    pattern = rf"(?m)^def {re.escape(name)}\(\):\n((?:[ \t]+.*\n?)*)"
+    pattern = rf"(?s)(?m)^def {re.escape(name)}\(\):.*?(?=\ndef |\Z)"  # full def block
     match = re.search(pattern, content)
     if not match:
         print(f"Session '{name}' not found.")
         list_sessions()
         return
 
-    body = textwrap.dedent(match.group(1))
-    exec(compile(body, f"<session:{name}>", "exec"), exec_locals)
-    print(f"Loaded session '{name}'.")
+    ns = dict(exec_locals)
+    exec(compile(match.group(0), f"<session:{name}>", "exec"), ns)
+    ns[name]()
 
 
 def list_sessions() -> None:
