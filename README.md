@@ -1,211 +1,254 @@
 # h5repl
 
-A Python REPL for interactively exploring, fitting, and plotting Gold System HDF5 experiment data. Open a file by ID, tab-complete your way to the data, fit it, and get a live-updating figure — then save the whole session as a named function you can replay later.
+Interactive Python REPL for Gold System HDF5 experiment data. Open a file, plot it, fit it, and save the session — all with tab completion and live-updating figures.
+
+```
+h5repl
+```
+
+> New here? Run `load_session(demo)` to walk through an interactive tutorial.
 
 ---
 
-## Installation
+## Setup
 
 ```sh
 pip install -e .
 ```
 
-## Configuration
-
 Edit `config.toml` to point at your data directories:
 
 ```toml
+user_dir = "./user"           # sessions, figures, fits
+
 [file_directories]
-data = "./data"
-# add more named directories as needed
+data = "./data"               # add more named directories as needed
 ```
 
 ---
 
-## Starting the REPL
-
-```sh
-h5repl
-```
-
-All h5repl functions, `np`, and `plt` are available immediately. No imports needed.
-
----
-
-## Quick Reference
-
-### File Operations
+## Opening files
 
 ```python
-open(103550)                        # open file by ID — no quotes needed
-h5open("103550", nickname="f")      # open with a short nickname
-h5print(f)                          # pretty-print file structure (including virtual datasets)
-get_dataset(f, pops_0)              # get a dataset — no quotes needed
-h5close(f)                          # close one file
-h5close_all()                       # close all open files
+h5open(103550)                # search configured directories for a file matching this ID
+browse()                      # open a file-browser dialog instead
+h5open(103550, nickname='f')  # short nickname for the rest of the session
+h5print(103550)               # explore file structure (tree view)
+h5print(103550, start_root='datasets/scan')   # focus on a subtree
+get_dataset(103550, 'duration')               # read a dataset by name (recursive search)
+h5close(103550)               # close one file
+h5close_all()                 # close all files
 ```
 
-`OPEN_FILES` holds all open file handles keyed by nickname.
+When opened, the file is wrapped as a `GoldH5File` which adds computed virtual datasets:
 
-Typing a function name alone prints its docstring:
-```
->>> h5open
-Docstring for h5open:
-...
-```
-
-### Virtual Datasets (Gold System)
-
-When a file is opened it is wrapped in `GoldH5File`, which adds computed datasets without modifying the file:
-
-| Dataset | Description |
+| Dataset | What it is |
 |---|---|
-| `params/*` | All experiment parameters extracted from `expid` JSON |
-| `pops_N` | Population per scan point for PMT N (relative to center) |
+| `params/*` | All experiment arguments from the `expid` JSON |
+| `pops_N` | Population per scan point for PMT N |
 | `errs_N` | Binomial error per scan point for PMT N |
-| `num_points` | Number of scan points |
-| `num_shots` | Number of shots per point |
+| `num_points` / `num_shots` | Scan size |
 
-PMT numbering: 0 = center, −1 = left of center, +1 = right, etc.
+PMT numbering: 0 = center, -1 = left, +1 = right, etc.
 
 ---
 
 ## Plotting
 
-The REPL uses `plt.ion()` for live-updating figures. Any open figure redraws after every REPL command automatically.
-
-Create a managed figure with `PlotManager`:
+### One-liner
 
 ```python
-plot = PlotManager()          # single axes
-plot = PlotManager(1, 2)      # two side-by-side subplots
+pm1 = quickplot(103550)       # auto-detects scan axis and active PMTs; returns PlotManager
+pm1 = quickplot(103550, xscale=1e6, xunit='us')   # rescale x at creation time
+pm1 = quickplot(103550, pmt=0)                    # specific PMT only
+pm1 = quickplot(103550, pmt='all')                # all PMT channels
 ```
 
-Add data with `Series`:
+`pm1` is also injected directly into the REPL namespace — you can type `pm1` right away.
+
+### PlotManager properties
+
+Setting any of these updates the figure immediately:
 
 ```python
-s = Series(x, y, label="signal", color="blue", marker='o')
-plot.add_series(s)            # subplot 0 by default
-plot.add_series(s, ax=1)      # subplot 1
-plot.clear()                  # clear all series
-plot.replot()                 # force redraw
+pm1.title  = 'Rabi flop'
+pm1.xlabel = 'duration (us)'
+pm1.ylabel = 'population'
+pm1.grid   = True
+pm1.xlim   = (0, 120)
+pm1.ylim   = (0, 1)
 ```
 
-`fig` and `axes` are fully public — any matplotlib call works directly:
+Rescaling triggers a full replot of all data:
 
 ```python
-plot.axes[0].set_xlabel("frequency (Hz)")
-plot.axes[0].set_yscale("log")
-plot.fig.suptitle("experiment 42")
+pm1.xscale = 1e6              # multiply all x data (e.g. s -> us)
+pm1.xunit  = 'us'             # update unit in xlabel (rebuilds label automatically)
+```
+
+Legend and adding data:
+
+```python
+pm1.legend()                  # show legend; unlabeled series get their nickname
+pm1.autoscale()               # reset xlim/ylim to auto
+pm1.add(x, y, label='ref', color='gray')    # add an extra series
+pm1.remove_series('ref')      # remove a series by name
+```
+
+Escape hatches to raw matplotlib:
+
+```python
+pm1.ax                        # matplotlib Axes
+pm1.fig                       # matplotlib Figure
+```
+
+### Series properties
+
+Each series updates the plot when you set an attribute:
+
+```python
+pm1.pmt0.color      = 'steelblue'
+pm1.pmt0.alpha      = 0.7
+pm1.pmt0.label      = 'center ion'
+pm1.pmt0.linestyle  = '--'        # None = markers only
+pm1.pmt0.marker     = 's'
+pm1.pmt0.markersize = 6
+pm1.pmt0.visible    = False       # hide/show
+```
+
+Fit line style (set before or after fitting):
+
+```python
+pm1.pmt0.fit_color     = 'red'   # defaults to same color as series
+pm1.pmt0.fit_linestyle = ':'     # defaults to '--'; shorthands use ':'
+```
+
+### Styles
+
+```python
+pm1.style('publication')          # apply a named style preset
+pm1.style(None)                   # clear style
+
+# define a new preset and save it to config.toml
+save_style('big_font', {'font.size': 16, 'lines.linewidth': 2.0})
+```
+
+### Exporting
+
+```python
+pm1.export('rabi_flop.pdf')           # saves to user/figures/
+pm1.export('rabi_flop.png', dpi=600)
+pm1.export()                          # uses plot title as filename
+pm1.export('out.pdf', dest='/tmp')    # explicit directory
 ```
 
 ---
 
 ## Fitting
 
-Wrap any function with `FitObj`:
+### Shorthands (recommended)
+
+Each shorthand auto-guesses initial parameters from the data, fits, prints the result, overlays a dotted line, and returns a `FitResult`.
 
 ```python
-def decay_sine(x, amp, omega, tau, background):
-    return -amp/2 * np.cos(omega * x) * np.exp(-x / tau) + background
-
-fit = FitObj(decay_sine)
+result = fit_rabi(pm1.pmt0)
+result = fit_decaying_cosine(pm1.pmt0)
+result = fit_lorentzian(pm1.pmt0)
+result = fit_gaussian(pm1.pmt0)
+result = fit_exp_decay(pm1.pmt0)
+result = fit_ramsey_phase(pm1.pmt0)
+result = fit_ramsey_time(pm1.pmt0)
+result = fit_spectroscopy(pm1.pmt0)   # reads pulse_duration from file automatically
+result = fit_linear(pm1.pmt0)
+result = fit_quadratic(pm1.pmt0)
 ```
 
-Set initial guesses and bounds by parameter name:
+Override any individual initial guess by keyword:
 
 ```python
-fit.p0.amp       = 1.0
-fit.p0.tau       = 50e-6
-fit.bounds.tau   = (0, np.inf)
-fit.bounds.omega = (0, np.inf)
+result = fit_rabi(pm1.pmt0, omega=np.pi * 2e4)
+result = fit_ramsey_time(pm1.pmt0, tau=100e-6)
+result = fit_spectroscopy(pm1.pmt0, 50e-6, center_freq=6.834e9)
 ```
 
-Fix parameters to constants:
+Type `fit_rabi;` to see the docstring listing all parameters.
+
+### Working with results
+
+All fitted parameters are `Unc` objects with a value (`.a`) and uncertainty (`.s`):
 
 ```python
-fit.fix(background=0.0)
-fit.unfix("background")
+result.amp            # Unc — prints as "0.847(12)"
+result.amp.a          # 0.847   (float)
+result.amp.s          # 0.012   (1-sigma)
+
+# use in labels and titles
+pi_time_us = np.pi / result.omega.a * 1e6
+pm1.title = f"Rabi flop  |  pi_time = {pi_time_us:.2f} us"
+pm1.pmt0.label = f"data  (omega = {result.omega})"
+
+# arithmetic propagates uncertainties
+two_pi_time = np.pi / result.omega * 2   # returns Unc
 ```
 
-Run and inspect:
+### Manual fitting
+
+For anything the shorthands don't cover:
 
 ```python
-result = fit.fit(x, y)
-print(result)           # table of all params with uncertainties
-print(result.amp)       # "1.234(5)"
-print(result.amp.a)     # 1.234  (central value)
-print(result.amp.s)     # 0.005  (1-sigma)
+fit = FitObj(rabi_flop)           # any function f(x, param1, param2, ...)
+fit.p0.amp    = 0.8               # set initial guess by name
+fit.p0.omega  = 1e5
+fit.bounds.omega = (0, np.inf)    # optional bounds
+fit.fix(offset=0.0)               # hold a parameter constant
+fit.unfix('offset')               # free it again
+
+result = pm1.pmt0.run_fit(fit)    # fits, prints, attaches, replots
+print(result)                     # table of all params with uncertainties
 ```
 
-Attach a fit to a Series to overlay the curve:
+Built-in fit functions:
 
-```python
-s = Series(x, y, label="data", fit=fit)
-plot.add_series(s)
+```
+linear(x, slope, intercept)
+quadratic(x, scale, center, offset)
+exp_decay(x, floor, amp, tau)
+lorentzian(x, center, floor, amp, fwhm)
+gaussian(x, center, floor, amp, fwhm)
+sine_fun(x, amp, freq, phi, offset)
+rabi_flop(x, amp, omega, offset)
+decaying_cosine(x, amp, omega, phi, tau, offset)
+rabi_spectroscopy(x, pulse_duration, scaling, floor, omega, center_freq)
+ramsey_phase(x, amp, offset, delay)
+ramsey_time(x, amp, omega, offset, delay, tau)
 ```
 
 ---
 
 ## Sessions
 
-The REPL records every command you run. At any point you can save the session as a named Python function in `user/sessions.py`:
+The REPL records every command you run. Save the session as a named function at any time:
 
 ```python
-save_session("raman_scan_103550")
+save_session(rabi_103550)                     # saves to user/sessions.py
+save_session(rabi_103550, directory='/path')  # save elsewhere
+load_session(rabi_103550)                     # replay in current namespace
+list_sessions()                               # show all saved sessions
+clear_history()                               # reset recording (start fresh)
 ```
 
-List and reload saved sessions:
-
-```python
-list_sessions()
-load_session("raman_scan_103550")   # replays in the current namespace
-```
-
-Sessions are stored as plain `def` functions in `user/sessions.py` — open the file in any editor to clean up exploratory commands or tweak parameters before re-running.
-
-`clear_history()` resets the in-session recording without touching the sessions file (useful when you want to save only the commands you run after a certain point).
+Sessions are plain Python `def` functions in `user/sessions.py` — open the file to edit parameters or cut exploratory commands before re-running.
 
 ---
 
-## User Directory
+## REPL tips
 
-```
-user/
-  sessions.py   — named session functions (auto-created on first save)
-  figures/      — save publication figures here
-  fits/         — store reusable fit function definitions here
-```
-
-Save a figure:
-
-```python
-plot.fig.savefig(USER_DIR / "figures" / "raman_103550.pdf", bbox_inches="tight")
-```
-
----
-
-## Tab Completion
-
-- `get_dataset(f, <TAB>)` — dataset names from that open file
-- `np.<TAB>` — numpy attributes
-- `plt.<TAB>` — matplotlib.pyplot attributes
-- Default — all REPL names and open file nicknames
-
----
-
-## Project Structure
-
-```
-src/h5repl/
-  cli.py          — REPL entry point, session tracking, matplotlib setup
-  h5utils.py      — file I/O: h5open, get_dataset, h5print
-  goldh5file.py   — GoldH5File with virtual datasets
-  fitutils.py     — FitObj, FitResult, Unc
-  plotting.py     — PlotManager, Series
-  session.py      — save_session, load_session, list_sessions
-  globals.py      — OPEN_FILES, CFG, USER_DIR
-  PTKCompleter.py — tab completion
-config.toml       — data directory configuration
-user/             — your figures, fits, and saved sessions
-```
+| Tip | What it does |
+|---|---|
+| `quickplot;` | Show the docstring for any function or object |
+| `pm1.pmt0.<TAB>` | Tab-complete attributes at any depth |
+| `load_session(<TAB>` | Tab-complete saved session names |
+| `help_repl` | Print the full quick reference |
+| `load_session(demo)` | Interactive tutorial |
+| Close a plot window | Automatically removes that PlotManager |
+| `open(103550)` | Silently rewritten to `h5open(103550)` |
