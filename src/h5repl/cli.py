@@ -2,7 +2,6 @@
 import sys
 import asyncio
 import matplotlib
-matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 import numpy as np
 import code
@@ -126,6 +125,7 @@ class H5REPL(code.InteractiveConsole):
 
 
 def main():
+    matplotlib.use('TkAgg')
     # SelectorEventLoop is required on Windows for Tk + asyncio compatibility.
     # ProactorEventLoop (the Windows default) conflicts with Tk's event handling.
     if sys.platform == 'win32':
@@ -133,6 +133,16 @@ def main():
 
     plt.ion()
     repl = H5REPL()
+
+    # Load user/startup.py into the REPL namespace if it exists.
+    from . import globals as _g
+    startup = _g.USER_DIR / 'startup.py'
+    if startup.exists():
+        try:
+            exec(compile(startup.read_text('utf-8'), str(startup), 'exec'), repl.locals)
+            print(f"Loaded {startup}")
+        except Exception as e:
+            print(f"startup.py error: {e}")
 
     def _load_and_sync(name):
         _session.load_session(name, repl.locals)

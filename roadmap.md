@@ -3,12 +3,15 @@
 ## What Works
 
 - **`GoldH5File`** -- virtual datasets (`pops_N`, `errs_N`, `params/`) computed on open
-- **`h5open` / `get_dataset` / `h5print`** -- open by RID, recursive search, tree view
+- **`h5open` / `get_dataset` / `h5print`** -- open by RID, recursive search, plain-text tree view
 - **`PlotManager` + `Series`** -- live-updating figure; all style attrs replot on assignment; `xscale`/`xunit` rescale retroactively; closing a window removes the manager
 - **`quickplot(rid)`** -- auto-detects scan axis and active PMTs, generates title with SI-prefixed fixed params, returns `PlotManager` auto-injected into REPL namespace as `pm1`, `pm2`, ...
-- **`FitObj` / `FitResult` / `Unc`** -- wraps any `f(x, *params)`, dot-accessible `p0`/`bounds`, `fix()`/`unfix()`, pretty uncertainty printing; built-in `sine_fun`, `decaying_cosine`
+- **`FitObj` / `FitResult` / `Unc`** -- wraps any `f(x, *params)`, dot-accessible `p0`/`bounds`, `fix()`/`unfix()`, pretty uncertainty printing; 11 built-in model functions
+- **Fit shorthands** -- `fit_rabi`, `fit_decaying_cosine`, `fit_lorentzian`, `fit_gaussian`, `fit_exp_decay`, `fit_ramsey_phase`, `fit_ramsey_time`, `fit_spectroscopy`, `fit_linear`, `fit_quadratic`; auto-guessed p0, keyword overrides, dotted fit line, returns `FitResult`
+- **`pm.export(filename, dest, dpi)`** -- saves figure to `user_dir/figures` (or `figures_dir` override); configurable via `config.toml`
+- **`pm.style(name)` / `save_style(name, rc)`** -- per-manager rcParams presets stored in `config.toml [styles]`
 - **REPL** -- asyncio + prompt_toolkit (figures stay responsive), tab completion at any depth (`pm1.pmt0.<TAB>`), auto-quoting preprocessor, `name;` shows docstring, zero-arg callables auto-run when typed alone
-- **Sessions** -- `save_session` / `load_session` as plain Python defs in `user/sessions.py`; built-in `demo` session as interactive tutorial
+- **Sessions** -- `save_session(name, directory)` / `load_session` as plain Python defs; built-in `demo` tutorial; configurable `user_dir` in `config.toml`
 
 ---
 
@@ -21,22 +24,7 @@
 - `search(type="RamanScan", after="2024-01-01")` -- filter by type/date
 - `h5open` checks index first, falls back to walk
 
-### 2. Built-in fit shorthands
-Common experiment types need a one-liner:
-```python
-fit_rabi(pm.pmt0)       # fits, replots, prints result
-fit_ramsey(pm.pmt0)
-```
-`FitObj` + `sine_fun` / `decaying_cosine` are ready; this is just a thin wrapper with sensible default p0.
-
-### 3. Publication figure helpers
-```python
-pm.export("rabi.pdf")       # tight layout, saves to user/figures/
-pm.style("publication")     # applies rcParams preset
-```
-Style presets in `user/style.py` so the user can edit them.
-
-### 4. Cross-file aggregation
+### 2. Cross-file aggregation
 ```python
 pm.add_from_files([rid1, rid2, ...],
     extract=lambda f: fit_rabi(f).omega.a,

@@ -37,6 +37,8 @@ user/figures/*
 user/fits/*
 !user/figures/.gitkeep
 !user/fits/.gitkeep
+user/startup.py
+user/sessions.py
 
 # Ignore user/editor files
 *.swp

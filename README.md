@@ -241,6 +241,96 @@ Sessions are plain Python `def` functions in `user/sessions.py` — open the fil
 
 ---
 
+## Custom functions
+
+Put personal utility functions in `user/startup.py`. The file is exec'd into the REPL namespace every time the REPL starts, so anything defined there is immediately available — no import needed.
+
+```python
+# user/startup.py
+from h5repl import *
+import numpy as np
+import matplotlib.pyplot as plt
+
+def scan_summary(rid):
+    """Open a file, print its scan structure, and plot it."""
+    h5open(rid)
+    h5print(rid, start_root='datasets/scan')
+    return quickplot(rid)
+
+def my_rabi(series):
+    """Fit a Rabi flop and update the title automatically."""
+    result = fit_rabi(series)
+    pi_us = np.pi / result.omega.a * 1e6
+    series._manager.title = f"Rabi flop  |  pi_time = {pi_us:.1f} us"
+    return result
+```
+
+Then in the REPL:
+
+```python
+pm1 = scan_summary(103550)
+result = my_rabi(pm1.pmt0)
+```
+
+Functions defined in startup.py are also tab-completed and can be inspected with `;`:
+
+```
+>>> my_rabi;
+```
+
+`user/startup.py` is gitignored — it's personal to your machine.
+
+---
+
+## Using h5repl as a library
+
+h5repl works as a normal Python package outside the REPL. Import everything:
+
+```python
+from h5repl import *
+import numpy as np
+import matplotlib
+matplotlib.use('TkAgg')         # set your preferred backend before importing pyplot
+import matplotlib.pyplot as plt
+```
+
+The REPL's asyncio figure pump isn't running outside the REPL, so call `plt.show()` (blocking) or `plt.pause()` to render figures:
+
+```python
+f = h5open(103550)
+pm1 = quickplot(103550)
+pm1.title = 'Rabi flop'
+pm1.xscale = 1e6
+pm1.xunit = 'us'
+
+result = fit_rabi(pm1.pmt0)
+print(result.omega)
+
+plt.show()                      # blocks until figure is closed
+```
+
+For non-interactive scripts, `plt.savefig` works without showing the window:
+
+```python
+from h5repl import *
+import matplotlib
+matplotlib.use('Agg')           # non-interactive backend, no display needed
+import matplotlib.pyplot as plt
+
+quickplot(103550)
+fit_rabi(globals.PLOT_MANAGERS['pm1'].pmt0)
+globals.PLOT_MANAGERS['pm1'].export('rabi_flop.pdf')
+```
+
+In Jupyter, set the backend with the magic before importing:
+
+```python
+%matplotlib widget          # or 'inline', 'notebook'
+from h5repl import *
+```
+
+---
+
 ## REPL tips
 
 | Tip | What it does |
