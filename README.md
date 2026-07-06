@@ -55,55 +55,108 @@ PMT numbering: 0 = center, -1 = left, +1 = right, etc.
 
 ## Accessing data arrays
 
-Three functions return numpy arrays directly, for use in fitting, custom plotting, or analysis outside the PlotManager.
+When a file is opened its active PMTs are detected automatically and printed:
 
-When only one file is open you can omit the file ID entirely.
-
-### Single-PMT populations
-
-```python
-y, yerr = pops(0)           # PMT 0, single file open
-y, yerr = pops(103550, -1)  # PMT -1, explicit file
-y, yerr = pops(103550, 1)   # PMT +1
+```
+Opening ./data/000103550-RamanScan.h5
+Active PMTs: [0]
 ```
 
-`y` and `yerr` are `(num_points,)` arrays — the same values `quickplot` draws.
+The file object then exposes populations, errors, and raw data directly through attribute access.
 
-### Raw shot-by-shot counts
+### Via the file object (recommended)
+
+`f = h5open(103550)` or `f = OPEN_FILES['103550']`
+
+**Individual PMT** (returns an unmanaged `Series` — can be fitted directly):
 
 ```python
-counts = raw(-1)            # (num_points, num_shots) integer array for PMT -1
-counts = raw(103550, 0)     # explicit file
-
-bright = raw(-1) > 1        # threshold to bool
-mean_counts = raw(-1).mean(axis=1)   # mean counts per scan point
+f.pmt0          # Series for PMT 0  (.x = scan axis, .y = pops, .yerr = errs)
+f.pmt0_err      # just the error array
 ```
 
-### Joint populations
+**Joint states** (bit order follows `active_pmts` left to right):
 
 ```python
-y, yerr = joint_pop(103550, [-1, 0], '01')   # P(dark, bright) per scan point
-y, yerr = joint_pop(103550, [-1, 0], '11')   # P(bright, bright)
+f.p01           # Series for state '01' — first active PMT dark, second bright
+f.p11           # Series for state '11'
+f.p01_err       # just the error array
 ```
 
-Bit order matches the PMT list: `'01'` → first PMT dark, second PMT bright.
-
-### Typical use: pass arrays straight to a fit shorthand
+Fitting directly on the file object — errors are included automatically:
 
 ```python
-h5open(103550)
-y, yerr = pops(0)
-x = get_dataset(103550, 'duration')
+f = h5open(103550)
+result = fit_rabi(f.pmt0)        # fits, prints, returns FitResult
 
+result = fit_rabi(f.p01)         # fit a specific joint state
+result.amp, result.omega         # Unc objects with .a and .s
+```
+
+For multi-ion files with `active_pmts = [-1, 0]`:
+- `f.p00` → both dark
+- `f.p01` → PMT -1 dark, PMT 0 bright
+- `f.p10` → PMT -1 bright, PMT 0 dark
+- `f.p11` → both bright
+
+Override the auto-detected PMTs at any time — all subsequent attribute access and functions use the new value:
+
+```python
+f.active_pmts = [-1, 0]   # override auto-detection
+```
+
+### Series arithmetic
+
+Series objects support `+`, `-`, `*`, `/`, `**`, and unary `-`. Errors propagate automatically. Addition and subtraction require matching x-axes; `*`, `/`, and `**` accept scalars only.
+
+```python
+f = h5open(103550)
+
+inversion = 1 - f.p00          # scalar - Series, same errors
+contrast  = f.p00 + f.p11      # errors add in quadrature
+half      = contrast / 2
+
+result = fit_rabi(half)
+```
+
+### Fitting a derived quantity
+
+Series support arithmetic directly — errors propagate automatically. To fit and plot a derived quantity:
+
+```python
+f = h5open(103550)
+pm1 = quickplot(103550, joint_states=['00', '11'])
+
+# arithmetic on managed series → new unmanaged Series with propagated errors
+contrast = (pm1.pop00 + pm1.pop11) / 2
+
+pm1.add_series(contrast, name='contrast')       # attach to the plot
+result = fit_rabi(pm1.contrast)          # fit overlays automatically
+```
+
+Or build and fit without a plot first, then add:
+
+```python
+contrast = (f.p00 + f.p11) / 2          # unmanaged Series
+result = fit_rabi(contrast)              # fits and prints; no overlay yet
 pm1 = quickplot(103550)
-result = fit_rabi(pm1.pmt0)
-
-# or fit without plotting at all:
-fit = FitObj(rabi_flop)
-fit.p0.amp = 0.8; fit.p0.omega = 1e5; fit.p0.offset = 0.05
-result = fit.fit(x, y, sigma=yerr, absolute_sigma=True)
-print(result)
+pm1.add_series(contrast, name='contrast')      # fit overlay appears when added
 ```
+
+### Via functions (for when you need the raw arrays)
+
+```python
+y, yerr = pops(0)             # (pop_array, err_array) for PMT 0, single file open
+y, yerr = pops(103550, -1)    # explicit file
+
+counts = raw(-1)              # (num_points, num_shots) integer array for PMT -1
+bright = raw(-1) > 1          # threshold to bool
+
+y, yerr = joint_pop(103550, '01')           # uses file's active_pmts
+y, yerr = joint_pop(103550, '01', [-1, 0])  # explicit PMT list
+```
+
+`pops()` and `raw()` accept `(pmt)` when one file is open, `(file_id, pmt)` when multiple are open.
 
 ---
 

@@ -1,3 +1,4 @@
+import re
 import h5py
 import json
 import numpy as np
@@ -87,7 +88,6 @@ class _VirtualGroup:
 
 
 class GoldH5File(h5py.File):
-    #TODO: ADD JOINT POPULATIONS 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
         self._virtual_datasets = {}
@@ -95,62 +95,92 @@ class GoldH5File(h5py.File):
         try:
             eid = h5utils.get_dataset(self, "expid")
             params = json.loads(eid)["arguments"]
-            # Expose the whole arguments dict as a virtual group at "params"
             self.add_virtual_dataset("params", params)
         except Exception as e:
             print(e)
             print("Couldn't find expid")
-            pass  
 
-        try: 
+        try:
             THRESHOLD = 1
             Y_MAX = 1
 
-            raw_counts = h5utils.get_dataset(self, "raw") # Try to get raw PMT counts
+            raw_counts = h5utils.get_dataset(self, "raw")
             num_points = len(raw_counts)
-            num_shots = len(raw_counts["0"])
-            num_pmt = len(raw_counts["0"][0])
+            num_shots  = len(raw_counts["0"])
+            num_pmt    = len(raw_counts["0"][0])
 
             pmt_data = np.zeros((num_pmt, num_points))
-            pmt_err = np.zeros((num_pmt, num_points))
+            pmt_err  = np.zeros((num_pmt, num_points))
 
-            for i in range(0, num_points):
-                # point data is (num pmt * num shots)
-                point_data = np.array(raw_counts['{}'.format(i)]).transpose()
-                for pmt in range(0, len(point_data)):
+            for i in range(num_points):
+                point_data = np.array(raw_counts[str(i)]).transpose()  # (num_pmt, num_shots)
+                for pmt in range(num_pmt):
                     pmt_data[pmt][i] = np.mean(point_data[pmt] > THRESHOLD)
 
             for pmt in range(num_pmt):
                 for i in range(num_points):
-                    perr = np.sqrt(pmt_data[pmt][i] * (Y_MAX-pmt_data[pmt][i])/num_shots)
-                    pmt_err[pmt][i] = 0.0 if perr == 0 else perr # I don't know why this is here
-            
-            # Add calculated populations and population errors
+                    perr = np.sqrt(pmt_data[pmt][i] * (Y_MAX - pmt_data[pmt][i]) / num_shots)
+                    pmt_err[pmt][i] = 0.0 if perr == 0 else perr
+
             for pmt in range(num_pmt):
-                self.add_virtual_dataset(f"pops_{pmt - (num_pmt // 2)}", pmt_data[pmt])  
-                self.add_virtual_dataset(f"errs_{pmt - (num_pmt // 2)}", pmt_err[pmt])  
-            
-            # Add other helpful values
+                vidx = pmt - (num_pmt // 2)
+                self.add_virtual_dataset(f"pops_{vidx}", pmt_data[pmt])
+                self.add_virtual_dataset(f"errs_{vidx}", pmt_err[pmt])
+
             self.add_virtual_dataset("num_points", num_points)
-            self.add_virtual_dataset("num_shots", num_shots)
+            self.add_virtual_dataset("num_shots",  num_shots)
 
         except Exception as e:
             print(e)
             print("Error finding/processing PMT data")
 
+        # -- scan axis + active PMTs -----------------------------------------------
+        self._scan_x    = None
+        self._scan_name = None
+        self.active_pmts = []
+        try:
+            sg = self['datasets/scan']
+            for k in sg.keys():
+                if k == 'product':
+                    continue
+                try:
+                    arr = np.asarray(sg[k][()])
+                    if arr.ndim == 1 and len(arr) > 1 and np.issubdtype(arr.dtype, np.number):
+                        self._scan_x    = arr
+                        self._scan_name = k
+                        break
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        # public alias so users can write f.x instead of f._scan_x
+        object.__setattr__(self, 'x', self._scan_x)
+
+        try:
+            active = []
+            for k in self.keys():
+                if not k.startswith('pops_'):
+                    continue
+                try:
+                    if np.mean(self[k][()]) > 0.05:
+                        active.append(int(k[5:]))
+                except Exception:
+                    pass
+            self.active_pmts = sorted(active, key=abs)
+            if self.active_pmts:
+                print(f"Active PMTs: {self.active_pmts}")
+        except Exception:
+            pass
+
     # -- virtual dataset registry ------------------------------------------
 
     def add_virtual_dataset(self, name: str, value):
-        """
-        Register a virtual dataset (or dict -> VirtualGroup) under `name`.
-        Can be called after __init__ to attach more virtual datasets.
-        """
+        """Register a virtual dataset (or dict -> VirtualGroup) under name."""
         self._virtual_datasets[name] = _wrap(value, name=f"/{name}")
 
     # -- transparent proxy to real + virtual ------------------------------
 
     def __getitem__(self, key: str):
-        # Virtual datasets shadow real ones (file is read-only anyway)
         top = key.split("/", 1)[0]
         if top in self._virtual_datasets:
             node = self._virtual_datasets[top]
@@ -167,20 +197,70 @@ class GoldH5File(h5py.File):
         return super().__contains__(key)
 
     def visititems(self, func):
-        # Walk real HDF5 datasets
         super().visititems(func)
-        # Walk virtual datasets
         for vname, vobj in self._virtual_datasets.items():
             if isinstance(vobj, _VirtualGroup):
                 vobj.visititems(lambda name, obj: func(f"{vname}/{name}", obj))
             else:
                 func(vname, vobj)
+
     def items(self):
-        real = list(super().items())
+        real    = list(super().items())
         virtual = list(self._virtual_datasets.items())
         return real + virtual
 
     def keys(self):
-        # Merge real keys + virtual keys
         from itertools import chain
         return list(chain(super().keys(), self._virtual_datasets.keys()))
+
+    # -- dot-access for populations ----------------------------------------
+
+    def __getattr__(self, name):
+        # guard: private attrs and real h5py attrs come first via normal lookup
+        if name.startswith('_'):
+            raise AttributeError(name)
+
+        from .series import Series
+        from .h5utils import joint_pop as _jp
+
+        x = object.__getattribute__(self, '_scan_x')
+        n_pts = len(x) if x is not None else None
+
+        def _x_for(y):
+            return x if x is not None else np.arange(len(y))
+
+        # p{bits}_err  →  joint population error array
+        m = re.fullmatch(r'p([01]+)_err', name)
+        if m:
+            _, err = _jp(self, m.group(1))
+            return err
+
+        # p{bits}  →  unmanaged Series (y = joint pop, yerr = joint err)
+        m = re.fullmatch(r'p([01]+)', name)
+        if m:
+            state = m.group(1)
+            y, yerr = _jp(self, state)
+            return Series(_x_for(y), y, yerr=yerr, label=state)
+
+        # pmt{n}_err  →  individual PMT error array  (n = non-negative integer)
+        m = re.fullmatch(r'pmt(\d+)_err', name)
+        if m:
+            idx  = int(m.group(1))
+            return np.asarray(self[f'errs_{idx}'][()])
+
+        # pmt{n}  →  unmanaged Series for individual PMT
+        m = re.fullmatch(r'pmt(\d+)', name)
+        if m:
+            idx  = int(m.group(1))
+            y    = np.asarray(self[f'pops_{idx}'][()])
+            yerr = np.asarray(self[f'errs_{idx}'][()])
+            return Series(_x_for(y), y, yerr=yerr, label=f'pmt{idx}')
+
+        raise AttributeError(f"GoldH5File has no attribute '{name}'")
+
+    def __repr__(self):
+        try:
+            fname = self.filename
+        except Exception:
+            fname = '?'
+        return f"<GoldH5File '{fname}' | active_pmts={self.active_pmts}>"

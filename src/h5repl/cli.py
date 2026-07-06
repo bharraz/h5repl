@@ -48,8 +48,14 @@ class H5REPL(code.InteractiveConsole):
         """Preprocesses source string before it is sent to runsource"""
         source = source.strip()
         source = re.sub(r'(?<![.\w])open\(', 'h5open(', source)        # open -> h5open
-        for key in globals.OPEN_FILES:                                   # quote file IDs
-            source = re.sub(key, f"\"{key}\"", source)
+        for key in globals.OPEN_FILES:
+            ek = re.escape(key)
+            # 166078.attr  →  OPEN_FILES["166078"].attr
+            source = re.sub(r'(?<!["\'\w])' + ek + r'(?=\.)',
+                            f'OPEN_FILES["{key}"]', source)
+            # bare 166078  →  "166078"  (function args, not followed by . or word char)
+            source = re.sub(r'(?<!["\'\w])' + ek + r'(?![\w.])',
+                            f'"{key}"', source)
         source = re.sub(r'get_dataset\(("[^"]*"|[^,]+),\s*([^"\s][^)]*?)\s*\)',
                          r'get_dataset(\1, "\2")', source)               # quote dataset name
         source = re.sub(r'\b((?:load|save)_session)\(([^"\'\s)][^)]*)\)',

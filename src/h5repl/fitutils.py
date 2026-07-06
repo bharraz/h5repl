@@ -35,11 +35,15 @@ class Unc:
         self.a = float(a)
         self.s = float(s)
 
+    @property
+    def err(self):
+        return self.s
+
     def __str__(self):
         return format_unc(self.a, self.s)
 
     def __repr__(self):
-        return f"Unc({self.a}, {self.s})"
+        return format_unc(self.a, self.s)
 
     def __float__(self):
         return self.a
@@ -201,6 +205,7 @@ class FitObj:
             self._wrapped_fn(), x, y,
             p0=self._resolve_p0(),
             bounds=self._resolve_bounds(),
+            maxfev=10000,
             **kwargs
         )
         self.result = FitResult(self._wrapped_fn(), self._free_params(), popt, pcov)

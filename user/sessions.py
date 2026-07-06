@@ -48,3 +48,7 @@ def test_fit_shorthands():
     print(f"  omega = {result2.omega}")
     print()
     print("  Done. Try: result.amp, result.omega.a, result.omega.s")
+
+def test_Jij():
+    pm1 = quickplot(166078, joint_states=['01'])
+    fit_decaying_cosine(pm1.pop01)

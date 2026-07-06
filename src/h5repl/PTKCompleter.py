@@ -16,7 +16,7 @@ class PTKCompleter(Completer):
         last_token = re.split(r'[\s(,\[]', full_line)[-1]  # token after last delimiter
         options = []
 
-        # session name completion
+        # session name completion — accumulates into options, falls through to kwargs below
         m = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
         if m:
             prefix = m.group(1)
@@ -24,10 +24,7 @@ class PTKCompleter(Completer):
             sf = _session._resolve_sessions_file()
             if sf.exists():
                 names += re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())
-            options = [n for n in names if n.startswith(prefix)]
-            for opt in sorted(set(options)):
-                yield Completion(opt, start_position=-len(prefix))
-            return
+            options += [n for n in names if n.startswith(prefix)]
 
         # dataset name completion inside get_dataset(file, <TAB>)
         m = re.match(r'get_dataset\(\s*([^,]+?)\s*,\s*["\']?(.*?)["\']?\s*$', full_line)

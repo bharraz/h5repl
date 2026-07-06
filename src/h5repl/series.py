@@ -108,14 +108,13 @@ class Series:
             self._plot_fit(ax, xscale=xscale, yscale=yscale)
 
     def run_fit(self, fit_obj):
-        """Fit this series' data, print the result, attach it, and replot."""
+        """Fit this series' data, attach the result, and replot. Returns FitResult."""
         kw = {}
         if self.yerr is not None:
             yerr = self.yerr
             if np.all(yerr > 0) and np.all(np.isfinite(yerr)):
                 kw = {'sigma': yerr, 'absolute_sigma': True}
         result = fit_obj.fit(self.x, self.y, **kw)
-        print(result)
         self.fit = result  # triggers replot
         return result
 
@@ -142,6 +141,106 @@ class Series:
                 color=fit_color,
                 alpha=self.fit_alpha,
                 label=fit_label)
+
+    # -- arithmetic -----------------------------------------------------------
+    # All operations return a new unmanaged Series with propagated errors.
+    # Series +/- Series requires matching x-axes (raises ValueError otherwise).
+    # Series * Series and Series / Series raise TypeError — use scalars only.
+    #
+    # Error propagation rules:
+    #   s1 + s2  or  s1 - s2  : yerr = sqrt(yerr1² + yerr2²)
+    #   s  +/-  c (scalar)    : yerr unchanged  (constant shift/offset)
+    #   s  *  c               : yerr = |c| * yerr
+    #   s  /  c               : yerr = yerr / |c|
+    #   c  /  s               : yerr = |c / y²| * yerr   (reciprocal rule)
+    #   s ** n                : yerr = |n * y^(n-1)| * yerr  (power rule)
+    #   -s                    : yerr unchanged
+
+    def _x_check(self, other):
+        if not np.array_equal(self.x, other.x):
+            raise ValueError(
+                f"Series x-axes do not match "
+                f"(lengths {len(self.x)} vs {len(other.x)}). "
+                "Ensure both series share the same scan axis before combining."
+            )
+
+    @staticmethod
+    def _safe_yerr(s):
+        return s.yerr if s.yerr is not None else np.zeros_like(s.y, dtype=float)
+
+    def __add__(self, other):
+        if isinstance(other, Series):
+            self._x_check(other)
+            y    = self.y + other.y
+            yerr = np.sqrt(Series._safe_yerr(self)**2 + Series._safe_yerr(other)**2)
+            label = f"({self.label or '?'}+{other.label or '?'})"
+            return Series(self.x.copy(), y, yerr=yerr, label=label)
+        y    = self.y + other
+        yerr = self.yerr.copy() if self.yerr is not None else None
+        label = f"({self.label or '?'}+{other})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __radd__(self, other):
+        if isinstance(other, Series):
+            return NotImplemented
+        return self.__add__(other)
+
+    def __sub__(self, other):
+        if isinstance(other, Series):
+            self._x_check(other)
+            y    = self.y - other.y
+            yerr = np.sqrt(Series._safe_yerr(self)**2 + Series._safe_yerr(other)**2)
+            label = f"({self.label or '?'}-{other.label or '?'})"
+            return Series(self.x.copy(), y, yerr=yerr, label=label)
+        y    = self.y - other
+        yerr = self.yerr.copy() if self.yerr is not None else None
+        label = f"({self.label or '?'}-{other})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __rsub__(self, other):
+        y    = other - self.y
+        yerr = self.yerr.copy() if self.yerr is not None else None
+        label = f"({other}-{self.label or '?'})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __mul__(self, other):
+        if isinstance(other, Series):
+            raise TypeError("Series * Series is not supported; multiply by a scalar instead.")
+        y    = self.y * other
+        yerr = (self.yerr * abs(other)) if self.yerr is not None else None
+        label = f"({self.label or '?'}*{other})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __rmul__(self, other):
+        return self.__mul__(other)
+
+    def __truediv__(self, other):
+        if isinstance(other, Series):
+            raise TypeError("Series / Series is not supported; divide by a scalar instead.")
+        y    = self.y / other
+        yerr = (self.yerr / abs(other)) if self.yerr is not None else None
+        label = f"({self.label or '?'}/{other})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __rtruediv__(self, other):
+        y    = other / self.y
+        yerr = (np.abs(other / self.y**2) * self.yerr) if self.yerr is not None else None
+        label = f"({other}/{self.label or '?'})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __pow__(self, other):
+        if isinstance(other, Series):
+            raise TypeError("Series ** Series is not supported; use a scalar exponent instead.")
+        y    = self.y ** other
+        yerr = (np.abs(other * self.y**(other - 1)) * self.yerr) if self.yerr is not None else None
+        label = f"({self.label or '?'}**{other})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
+
+    def __neg__(self):
+        y    = -self.y
+        yerr = self.yerr.copy() if self.yerr is not None else None
+        label = f"(-{self.label or '?'})"
+        return Series(self.x.copy(), y, yerr=yerr, label=label)
 
     def __repr__(self):
         n = len(self.x) if hasattr(self.x, '__len__') else '?'

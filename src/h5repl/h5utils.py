@@ -215,45 +215,60 @@ def raw(file_id_or_pmt, pmt=None):
     return np.stack([np.array(raw_group[str(i)])[:, col] for i in range(num_points)])
 
 
-def joint_pop(file_id, pmts, state):
+def joint_pop(file_id, state, pmts=None):
     """
     Compute the joint population of a multi-qubit state across all scan points.
 
     Args:
-        file_id : RID or nickname (file opened automatically if needed)
-        pmts    : ordered list of PMT indices, e.g. [-1, 0]
-        state   : bit string matching len(pmts), e.g. '01'
-                  '0' = dark (at or below threshold)
-                  '1' = bright (above threshold)
+        file_id : RID, nickname, or open GoldH5File object
+        state   : bit string, e.g. '01'
+                  '0' = dark (at or below threshold), '1' = bright (above threshold)
+                  bit order matches active_pmts left to right
+        pmts    : ordered list of PMT indices, e.g. [-1, 0].
+                  Defaults to the file's active_pmts.
 
     Returns:
         (pops, errs) -- numpy arrays of length num_points
 
     Examples:
-        pops, errs = joint_pop(103550, [-1, 0], '01')
-        pops, errs = joint_pop(103550, [-1, 0, 1], '011')
+        pops, errs = joint_pop(103550, '01')           # uses file's active_pmts
+        pops, errs = joint_pop(103550, '01', [-1, 0])  # explicit PMT list
     """
     THRESHOLD = 1
 
-    raw = get_dataset(file_id, 'raw')
-    if raw is None:
-        print(f"'raw' dataset not found in {file_id}.")
+    file = file_id if hasattr(file_id, '_virtual_datasets') else _get_file(str(file_id))
+    if file is None:
         return None, None
 
-    num_points = int(get_dataset(file_id, 'num_points'))
-    first_point = np.array(raw['0'])        # (num_shots, num_pmt)
+    if pmts is None:
+        pmts = getattr(file, 'active_pmts', None)
+        if not pmts:
+            print("No active_pmts on file and none provided. Pass pmts explicitly.")
+            return None, None
+
+    if len(state) != len(pmts):
+        print(f"State '{state}' has {len(state)} bits but {len(pmts)} PMTs were given.")
+        return None, None
+
+    raw = get_dataset(file, 'raw')
+    if raw is None:
+        print("'raw' dataset not found.")
+        return None, None
+
+    num_points  = int(get_dataset(file, 'num_points'))
+    first_point = np.array(raw['0'])    # (num_shots, num_pmt)
     num_pmt     = first_point.shape[1]
-    offset      = num_pmt // 2              # virtual 0 is at raw index offset
+    offset      = num_pmt // 2
 
     raw_indices = [p + offset for p in pmts]
     want_bright = [c == '1' for c in state]
 
-    pops = np.zeros(num_points)
-    errs = np.zeros(num_points)
+    pops_arr = np.zeros(num_points)
+    errs_arr = np.zeros(num_points)
 
     for i in range(num_points):
-        counts = np.array(raw[str(i)])      # (num_shots, num_pmt)
-        bright = counts > THRESHOLD         # bool, same shape
+        counts = np.array(raw[str(i)])  # (num_shots, num_pmt)
+        bright = counts > THRESHOLD
 
         match = np.ones(counts.shape[0], dtype=bool)
         for raw_idx, want in zip(raw_indices, want_bright):
@@ -261,10 +276,10 @@ def joint_pop(file_id, pmts, state):
 
         n = counts.shape[0]
         p = float(np.mean(match))
-        pops[i] = p
-        errs[i] = np.sqrt(p * (1.0 - p) / n) if n > 0 else 0.0
+        pops_arr[i] = p
+        errs_arr[i] = np.sqrt(p * (1.0 - p) / n) if n > 0 else 0.0
 
-    return pops, errs
+    return pops_arr, errs_arr
 
 
 def h5print(filename, skip_roots=None, start_root=None):

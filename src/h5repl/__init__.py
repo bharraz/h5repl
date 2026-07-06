@@ -9,6 +9,7 @@ from .fitutils import (FitObj, FitResult, Unc,
                        sine_fun, rabi_flop, decaying_cosine, rabi_spectroscopy,
                        ramsey_phase, ramsey_time)
 from .plotting import PlotManager, save_style
+from .series import Series
 from .fitshorthands import (fit_rabi, fit_decaying_cosine,
                              fit_lorentzian, fit_gaussian, fit_exp_decay,
                              fit_ramsey_phase, fit_ramsey_time, fit_spectroscopy,
@@ -55,8 +56,9 @@ def help_repl():
   quickplot(103550, xscale=1e6, xunit='us')     rescale x at creation time
   quickplot(103550, pmt=0)        plot only PMT 0
   quickplot(103550, pmt='all')    plot all PMT channels
-  quickplot(103550, joint=[-1,0]) joint-state plot (all 4 states as series)
-  quickplot(103550, joint=[-1,0], states=['01','11'])  specific states only
+  quickplot(103550, joint_states=True)              plot all joint states (uses file's active_pmts)
+  quickplot(103550, joint_states=['01','11'])        specific states only
+  quickplot(103550, joint_states=['01'], pmts=[-1,0])  override which PMTs
 
 -- PlotManager (pm1, pm2, ...) -------------------------------------------
   pm1.title  = 'Rabi flop'        set title
@@ -78,7 +80,8 @@ def help_repl():
   pm1.pmt0.alpha      = 0.5       transparency
   pm1.pmt0.label      = 'data'    update legend entry
   pm1.pmt0.visible    = False     hide/show series
-  pm1.add(x, y, yerr=e, label='ref', color='gray')   add a new series
+  pm1.add_series(s)               add a pre-built Series (from arithmetic, file attrs, etc.)
+  pm1.add_series(s, name='ref')   same with an explicit name
   pm1.remove_series('pmt0')       remove a named series
 
 -- Fitting ----------------------------------------------------------------

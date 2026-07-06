@@ -89,31 +89,31 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
               xlabel=None, xunit=None, xscale=None,
               ylabel=None, yunit=None, yscale=None,
               fmt='o', capsize=3,
-              joint=None, states=None,
+              joint_states=None, pmts=None,
               **kwargs):
     """
     Plot populations from a Gold System HDF5 file with automatic x-axis,
     active-PMT detection, and title generation. Returns the PlotManager.
 
     Args:
-        file_id  : RID or nickname (file opened automatically if not already open).
-        pmt      : int, list of ints, or 'all'. Default: auto-detect active channels.
-        fit      : FitObj or FitResult to overlay (single-PMT only).
-        title    : Override the auto-generated title.
-        xlabel   : Override x-axis label (default: scan axis name [+ xunit]).
-        xunit    : Unit string appended to xlabel, e.g. 'us'. Setting pm.xunit later
-                   also regenerates the label.
-        xscale   : Multiply x values by this factor, e.g. 1e6 for s->us.
-        ylabel   : Override y-axis label (default: 'population').
-        yunit    : Unit string appended to ylabel.
-        yscale   : Multiply population values by this factor.
-        fmt      : errorbar format string, default 'o'.
-        capsize  : errorbar cap size in points.
-        joint    : list of PMT indices for joint-state plotting, e.g. [-1, 0].
-                   When given, pmt is ignored and each state becomes a series.
-        states   : which joint states to plot, e.g. ['01', '11'].
-                   Defaults to all 2^n states when joint is given.
-        **kwargs : Passed to ax.errorbar (color, markersize, alpha, ...).
+        file_id      : RID or nickname (file opened automatically if not already open).
+        pmt          : int, list of ints, or 'all'. Default: auto-detect active channels.
+                       Selects which individual PMT channels to plot.
+        fit          : FitObj or FitResult to overlay (single-PMT only).
+        title        : Override the auto-generated title.
+        xlabel       : Override x-axis label (default: scan axis name [+ xunit]).
+        xunit        : Unit string appended to xlabel, e.g. 'us'.
+        xscale       : Multiply x values by this factor, e.g. 1e6 for s->us.
+        ylabel       : Override y-axis label (default: 'population').
+        yunit        : Unit string appended to ylabel.
+        yscale       : Multiply population values by this factor.
+        fmt          : errorbar format string, default 'o'.
+        capsize      : errorbar cap size in points.
+        joint_states : list of states to plot, e.g. ['01', '11'], or True for all states.
+                       When given, each state becomes a separate series using the file's
+                       active_pmts (overridden by pmts=).
+        pmts         : override which PMTs to use for joint_states mode, e.g. [-1, 0].
+        **kwargs     : Passed to ax.errorbar (color, markersize, alpha, ...).
 
     Returns:
         PlotManager - also stored in PLOT_MANAGERS as 'pm1', 'pm2', ...
@@ -121,10 +121,9 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
     Examples:
         quickplot(103550)
         pm = quickplot(103550, xscale=1e6, xunit='us')
-        pm.title = 'Rabi flop'
-        pm.pmt0.color = 'red'
-        quickplot(103550, joint=[-1, 0], states=['01', '11'])
-        quickplot(103550, joint=[-1, 0])   # plots all four states
+        quickplot(103550, joint_states=['01', '11'])      # uses file's active_pmts
+        quickplot(103550, joint_states=True)             # all 2^n states
+        quickplot(103550, joint_states=['01'], pmts=[-1, 0])  # explicit PMTs
     """
     file_id = str(file_id)
     if file_id not in _globals.OPEN_FILES:
@@ -191,15 +190,22 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
     new_series = {}
     label_kwarg = kwargs.pop('label', None)
 
-    if joint is not None:
+    if joint_states is not None:
         # -- joint state populations -------------------------------------------
-        n = len(joint)
-        plot_states = states if states is not None else [format(i, f'0{n}b') for i in range(2 ** n)]
-        if isinstance(plot_states, str):
-            plot_states = [plot_states]
-        print(f"Joint PMTs {joint}, states: {plot_states}")
+        joint_pmts = pmts if pmts is not None else getattr(f, 'active_pmts', None)
+        if not joint_pmts:
+            print("No active_pmts on file. Pass pmts= explicitly.")
+            return mgr
+        n = len(joint_pmts)
+        if joint_states is True:
+            plot_states = [format(i, f'0{n}b') for i in range(2 ** n)]
+        elif isinstance(joint_states, str):
+            plot_states = [joint_states]
+        else:
+            plot_states = list(joint_states)
+        print(f"Joint PMTs {joint_pmts}, states: {plot_states}")
         for state in plot_states:
-            y, yerr = _joint_pop(file_id, joint, state)
+            y, yerr = _joint_pop(file_id, state, joint_pmts)
             if y is None:
                 continue
             s_label = label_kwarg if label_kwarg else state

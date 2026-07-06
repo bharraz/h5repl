@@ -2,7 +2,6 @@ import re
 from pathlib import Path
 import matplotlib as mpl
 import matplotlib.pyplot as plt
-from .series import Series
 from . import globals as _globals
 
 
@@ -169,26 +168,18 @@ class PlotManager:
             object.__setattr__(s, 'color', colors[idx % len(colors)])
             object.__setattr__(self, '_color_idx', idx + 1)
 
-    def add(self, x, y, yerr=None, name=None, label=None,
-            color=None, linestyle=None, marker=None,
-            fit=None, fmt='o', capsize=3, **kwargs):
+    def add_series(self, s, name=None):
         """
-        Add data as a new series and replot. Returns the nickname.
+        Add a pre-built Series to the plot and replot. Returns the nickname.
 
-            pm.add(x, y, label='Rabi', color='steelblue')
-            pm.Rabi.color = 'red'
-            pm.add(x, y, name='ref')
-            pm.ref.linestyle = '--'
+        Build the series first, then pass it in:
+
+            s = Series(x, y)
+            s = Series(x, y, yerr=e, label='ref')
+            s = f.p01 + f.p11        # arithmetic on file attributes
+            pm.add_series(s)
+            pm.add_series(s, name='contrast')
         """
-        s = Series(x, y, yerr=yerr, label=label, color=color,
-                   linestyle=linestyle, marker=marker, fit=fit,
-                   fmt=fmt, capsize=capsize, **kwargs)
-        nickname = _series_nickname(name, label, fallback=f's{len(self.series) + 1}')
-        self._add_series(s, name=nickname)
-        print(f"Added as '{nickname}'")
-        return nickname
-
-    def _add_series(self, s, name=None):
         if name is None:
             name = _series_nickname(None, getattr(s, 'label', None),
                                     fallback=f's{len(self.series) + 1}')
@@ -196,6 +187,7 @@ class PlotManager:
         object.__setattr__(s, '_manager', self)
         self.series[name] = s
         self.replot()
+        print(f"Added as '{name}'")
         return name
 
     def _add_series_batch(self, series_dict):
