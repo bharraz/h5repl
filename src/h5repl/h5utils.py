@@ -160,6 +160,113 @@ def get_dataset(filename, name):
     return obj  # group
 
 
+def _single_file_or(file_id_or_pmt, pmt):
+    """Support (pmt) and (file_id, pmt) calling conventions.
+    When called as f(pmt), uses the single open file (errors if 0 or 2+ are open).
+    """
+    if pmt is None:
+        pmt_val = file_id_or_pmt
+        if len(OPEN_FILES) == 0:
+            raise ValueError("No files open. Call h5open() or browse() first.")
+        if len(OPEN_FILES) > 1:
+            raise ValueError(
+                f"Multiple files open {list(OPEN_FILES)} — pass file_id explicitly."
+            )
+        return next(iter(OPEN_FILES)), pmt_val
+    return str(file_id_or_pmt), pmt
+
+
+def pops(file_id_or_pmt, pmt=None):
+    """
+    Return (populations, errors) arrays for a single PMT across all scan points.
+    Uses the single open file when called with just a PMT number.
+
+        y, yerr = pops(0)          # PMT 0, single file open
+        y, yerr = pops(103550, -1) # PMT -1, explicit file
+    """
+    file_id, pmt = _single_file_or(file_id_or_pmt, pmt)
+    y    = get_dataset(file_id, f'pops_{pmt}')
+    yerr = get_dataset(file_id, f'errs_{pmt}')
+    if y is None:
+        print(f"pops_{pmt} not found in {file_id}.")
+        return None, None
+    return np.asarray(y), (np.asarray(yerr) if yerr is not None else None)
+
+
+def raw(file_id_or_pmt, pmt=None):
+    """
+    Return raw shot-by-shot photon counts for a single PMT as a
+    (num_points, num_shots) integer array.
+    Uses the single open file when called with just a PMT number.
+
+        counts = raw(-1)            # PMT -1, single file open
+        counts = raw(103550, 0)     # PMT 0, explicit file
+        bright = raw(-1) > 1        # threshold to bool
+    """
+    file_id, pmt = _single_file_or(file_id_or_pmt, pmt)
+    raw_group = get_dataset(file_id, 'raw')
+    if raw_group is None:
+        print(f"'raw' dataset not found in {file_id}.")
+        return None
+    num_points = int(get_dataset(file_id, 'num_points'))
+    first      = np.array(raw_group['0'])   # (num_shots, num_pmt)
+    offset     = first.shape[1] // 2
+    col        = pmt + offset
+    return np.stack([np.array(raw_group[str(i)])[:, col] for i in range(num_points)])
+
+
+def joint_pop(file_id, pmts, state):
+    """
+    Compute the joint population of a multi-qubit state across all scan points.
+
+    Args:
+        file_id : RID or nickname (file opened automatically if needed)
+        pmts    : ordered list of PMT indices, e.g. [-1, 0]
+        state   : bit string matching len(pmts), e.g. '01'
+                  '0' = dark (at or below threshold)
+                  '1' = bright (above threshold)
+
+    Returns:
+        (pops, errs) -- numpy arrays of length num_points
+
+    Examples:
+        pops, errs = joint_pop(103550, [-1, 0], '01')
+        pops, errs = joint_pop(103550, [-1, 0, 1], '011')
+    """
+    THRESHOLD = 1
+
+    raw = get_dataset(file_id, 'raw')
+    if raw is None:
+        print(f"'raw' dataset not found in {file_id}.")
+        return None, None
+
+    num_points = int(get_dataset(file_id, 'num_points'))
+    first_point = np.array(raw['0'])        # (num_shots, num_pmt)
+    num_pmt     = first_point.shape[1]
+    offset      = num_pmt // 2              # virtual 0 is at raw index offset
+
+    raw_indices = [p + offset for p in pmts]
+    want_bright = [c == '1' for c in state]
+
+    pops = np.zeros(num_points)
+    errs = np.zeros(num_points)
+
+    for i in range(num_points):
+        counts = np.array(raw[str(i)])      # (num_shots, num_pmt)
+        bright = counts > THRESHOLD         # bool, same shape
+
+        match = np.ones(counts.shape[0], dtype=bool)
+        for raw_idx, want in zip(raw_indices, want_bright):
+            match &= (bright[:, raw_idx] == want)
+
+        n = counts.shape[0]
+        p = float(np.mean(match))
+        pops[i] = p
+        errs[i] = np.sqrt(p * (1.0 - p) / n) if n > 0 else 0.0
+
+    return pops, errs
+
+
 def h5print(filename, skip_roots=None, start_root=None):
     """
     Pretty-print the HDF5 file structure using rich.

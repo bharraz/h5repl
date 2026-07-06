@@ -8,6 +8,7 @@ from . import globals as _globals
 from .plotting import PlotManager
 from .series import Series
 from .fitutils import FitObj, FitResult
+from .h5utils import joint_pop as _joint_pop
 
 
 # -- helpers -------------------------------------------------------------------
@@ -87,7 +88,9 @@ def _fmt_val(v, unit=''):
 def quickplot(file_id, pmt=None, fit=None, title=None,
               xlabel=None, xunit=None, xscale=None,
               ylabel=None, yunit=None, yscale=None,
-              fmt='o', capsize=3, **kwargs):
+              fmt='o', capsize=3,
+              joint=None, states=None,
+              **kwargs):
     """
     Plot populations from a Gold System HDF5 file with automatic x-axis,
     active-PMT detection, and title generation. Returns the PlotManager.
@@ -106,6 +109,10 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
         yscale   : Multiply population values by this factor.
         fmt      : errorbar format string, default 'o'.
         capsize  : errorbar cap size in points.
+        joint    : list of PMT indices for joint-state plotting, e.g. [-1, 0].
+                   When given, pmt is ignored and each state becomes a series.
+        states   : which joint states to plot, e.g. ['01', '11'].
+                   Defaults to all 2^n states when joint is given.
         **kwargs : Passed to ax.errorbar (color, markersize, alpha, ...).
 
     Returns:
@@ -116,7 +123,8 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
         pm = quickplot(103550, xscale=1e6, xunit='us')
         pm.title = 'Rabi flop'
         pm.pmt0.color = 'red'
-        pm.xunit = 'MHz'            # regenerates xlabel automatically
+        quickplot(103550, joint=[-1, 0], states=['01', '11'])
+        quickplot(103550, joint=[-1, 0])   # plots all four states
     """
     file_id = str(file_id)
     if file_id not in _globals.OPEN_FILES:
@@ -157,23 +165,7 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
     eff_xunit = mgr._sc['xunit']
     eff_yunit = mgr._sc['yunit']
 
-    # -- PMT selection ---------------------------------------------------------
-    if pmt is None:
-        active_pmts = _infer_active_pmts(f)
-        if not active_pmts:
-            print("No active PMT channels detected (mean pops < 5%). "
-                  "Try quickplot(..., pmt='all') to override.")
-            return mgr
-        print(f"Auto-detected active PMTs: {active_pmts}")
-    elif pmt == 'all':
-        active_pmts = sorted(                                   # all channels present
-            [int(k[5:]) for k in f.keys() if k.startswith('pops_')], key=abs)
-    elif isinstance(pmt, int):
-        active_pmts = [pmt]
-    else:
-        active_pmts = list(pmt)
-
-    # -- title + labels --------------------------------------------------------
+    # -- title + labels (shared) -----------------------------------------------
     if title is None:
         try:
             expclass = json.loads(f['expid'][()].decode()).get('class_name', '?')
@@ -190,39 +182,76 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
 
     if xlabel is None:
         xlabel = f"{x_name} ({eff_xunit})" if eff_xunit else x_name
-        object.__setattr__(mgr, '_xname', x_name)       # enables xunit -> xlabel rebuild
+        object.__setattr__(mgr, '_xname', x_name)
     if ylabel is None:
         ylabel = f"population ({eff_yunit})" if eff_yunit else "population"
-        object.__setattr__(mgr, '_yname', 'population') # enables yunit -> ylabel rebuild
+        object.__setattr__(mgr, '_yname', 'population')
 
     # -- build series ----------------------------------------------------------
     new_series = {}
     label_kwarg = kwargs.pop('label', None)
 
-    for pmt_idx in active_pmts:
-        pops_key = f'pops_{pmt_idx}'
-        errs_key = f'errs_{pmt_idx}'
-        if pops_key not in f:
-            print(f"Warning: {pops_key} not found, skipping.")
-            continue
-
-        y    = np.asarray(f[pops_key][()])
-        yerr = np.asarray(f[errs_key][()]) if errs_key in f else None
-
-        if label_kwarg is not None:
-            s_label = label_kwarg if len(active_pmts) == 1 else f"{label_kwarg} {pmt_idx}"
+    if joint is not None:
+        # -- joint state populations -------------------------------------------
+        n = len(joint)
+        plot_states = states if states is not None else [format(i, f'0{n}b') for i in range(2 ** n)]
+        if isinstance(plot_states, str):
+            plot_states = [plot_states]
+        print(f"Joint PMTs {joint}, states: {plot_states}")
+        for state in plot_states:
+            y, yerr = _joint_pop(file_id, joint, state)
+            if y is None:
+                continue
+            s_label = label_kwarg if label_kwarg else state
+            s = Series(x_raw, y, yerr=yerr, label=s_label,
+                       fmt=fmt, capsize=capsize, **kwargs)
+            object.__setattr__(s, '_file_id', file_id)
+            new_series[f'pop{state}'] = s
+        mgr._set_disp_silent(title=title, xlabel=xlabel, ylabel=ylabel)
+        if len(plot_states) > 1:
+            object.__setattr__(mgr, '_legend', True)
+    else:
+        # -- individual PMT populations ----------------------------------------
+        if pmt is None:
+            active_pmts = _infer_active_pmts(f)
+            if not active_pmts:
+                print("No active PMT channels detected (mean pops < 5%). "
+                      "Try quickplot(..., pmt='all') to override.")
+                return mgr
+            print(f"Auto-detected active PMTs: {active_pmts}")
+        elif pmt == 'all':
+            active_pmts = sorted(
+                [int(k[5:]) for k in f.keys() if k.startswith('pops_')], key=abs)
+        elif isinstance(pmt, int):
+            active_pmts = [pmt]
         else:
-            s_label = f'PMT {pmt_idx}' if len(active_pmts) > 1 else None
+            active_pmts = list(pmt)
 
-        s = Series(x_raw, y, yerr=yerr, label=s_label,
-                   fit=fit if len(active_pmts) == 1 else None,
-                   fmt=fmt, capsize=capsize, **kwargs)
-        object.__setattr__(s, '_file_id', file_id)   # for fit_spectroscopy param lookup
-        new_series[f'pmt{pmt_idx}'] = s
+        for pmt_idx in active_pmts:
+            pops_key = f'pops_{pmt_idx}'
+            errs_key = f'errs_{pmt_idx}'
+            if pops_key not in f:
+                print(f"Warning: {pops_key} not found, skipping.")
+                continue
 
-    mgr._set_disp_silent(title=title, xlabel=xlabel, ylabel=ylabel)  # no replot yet
-    if len(active_pmts) > 1 or fit is not None:
-        object.__setattr__(mgr, '_legend', True)                     # auto show legend
+            y    = np.asarray(f[pops_key][()])
+            yerr = np.asarray(f[errs_key][()]) if errs_key in f else None
+
+            if label_kwarg is not None:
+                s_label = label_kwarg if len(active_pmts) == 1 else f"{label_kwarg} {pmt_idx}"
+            else:
+                s_label = f'PMT {pmt_idx}' if len(active_pmts) > 1 else None
+
+            s = Series(x_raw, y, yerr=yerr, label=s_label,
+                       fit=fit if len(active_pmts) == 1 else None,
+                       fmt=fmt, capsize=capsize, **kwargs)
+            object.__setattr__(s, '_file_id', file_id)
+            new_series[f'pmt{pmt_idx}'] = s
+
+        mgr._set_disp_silent(title=title, xlabel=xlabel, ylabel=ylabel)
+        if len(active_pmts) > 1 or fit is not None:
+            object.__setattr__(mgr, '_legend', True)
+
     mgr._add_series_batch(new_series)
 
     return mgr

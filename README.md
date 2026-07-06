@@ -53,6 +53,60 @@ PMT numbering: 0 = center, -1 = left, +1 = right, etc.
 
 ---
 
+## Accessing data arrays
+
+Three functions return numpy arrays directly, for use in fitting, custom plotting, or analysis outside the PlotManager.
+
+When only one file is open you can omit the file ID entirely.
+
+### Single-PMT populations
+
+```python
+y, yerr = pops(0)           # PMT 0, single file open
+y, yerr = pops(103550, -1)  # PMT -1, explicit file
+y, yerr = pops(103550, 1)   # PMT +1
+```
+
+`y` and `yerr` are `(num_points,)` arrays — the same values `quickplot` draws.
+
+### Raw shot-by-shot counts
+
+```python
+counts = raw(-1)            # (num_points, num_shots) integer array for PMT -1
+counts = raw(103550, 0)     # explicit file
+
+bright = raw(-1) > 1        # threshold to bool
+mean_counts = raw(-1).mean(axis=1)   # mean counts per scan point
+```
+
+### Joint populations
+
+```python
+y, yerr = joint_pop(103550, [-1, 0], '01')   # P(dark, bright) per scan point
+y, yerr = joint_pop(103550, [-1, 0], '11')   # P(bright, bright)
+```
+
+Bit order matches the PMT list: `'01'` → first PMT dark, second PMT bright.
+
+### Typical use: pass arrays straight to a fit shorthand
+
+```python
+h5open(103550)
+y, yerr = pops(0)
+x = get_dataset(103550, 'duration')
+
+pm1 = quickplot(103550)
+result = fit_rabi(pm1.pmt0)
+
+# or fit without plotting at all:
+fit = FitObj(rabi_flop)
+fit.p0.amp = 0.8; fit.p0.omega = 1e5; fit.p0.offset = 0.05
+result = fit.fit(x, y, sigma=yerr, absolute_sigma=True)
+print(result)
+```
+
+---
+
 ## Plotting
 
 ### One-liner

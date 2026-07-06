@@ -47,3 +47,6 @@ user/sessions.py
 *.tmp
 .idea/
 .vscode/
+
+*.pdf
+*.yaml

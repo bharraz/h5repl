@@ -1,6 +1,6 @@
 # h5repl package init
 
-from .h5utils import h5open, browse, get_dataset, h5print, h5close, h5close_all
+from .h5utils import h5open, browse, get_dataset, h5print, h5close, h5close_all, pops, raw, joint_pop
 from .goldh5file import GoldH5File
 from .globals import OPEN_FILES, PLOT_MANAGERS, CFG, USER_DIR
 from .fitutils import (FitObj, FitResult, Unc,
@@ -44,12 +44,19 @@ def help_repl():
   get_dataset(103550, 'duration') read a dataset by name (recursive search)
   h5close(103550)                 close one file
   h5close_all()                   close all files
+  pops(0)                         (pop_array, err_array) for PMT 0 (single open file)
+  pops(103550, -1)                same, explicit file
+  raw(-1)                         (num_points, num_shots) raw counts for PMT -1
+  raw(103550, -1)                 same, explicit file
+  joint_pop(103550, [-1,0], '01') (pop_array, err_array) for joint state '01'
 
 -- Plotting ---------------------------------------------------------------
   quickplot(103550)               auto-plot from file: detects PMTs & x-axis
   quickplot(103550, xscale=1e6, xunit='us')     rescale x at creation time
   quickplot(103550, pmt=0)        plot only PMT 0
   quickplot(103550, pmt='all')    plot all PMT channels
+  quickplot(103550, joint=[-1,0]) joint-state plot (all 4 states as series)
+  quickplot(103550, joint=[-1,0], states=['01','11'])  specific states only
 
 -- PlotManager (pm1, pm2, ...) -------------------------------------------
   pm1.title  = 'Rabi flop'        set title
@@ -132,6 +139,9 @@ __all__ = [
     "h5open",
     "browse",
     "get_dataset",
+    "pops",
+    "raw",
+    "joint_pop",
     "h5print",
     "h5close",
     "h5close_all",
