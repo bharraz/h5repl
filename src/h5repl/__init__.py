@@ -8,7 +8,7 @@ from .fitutils import (FitObj, FitResult, Unc,
                        lorentzian, gaussian,
                        sine_fun, rabi_flop, decaying_cosine, rabi_spectroscopy,
                        ramsey_phase, ramsey_time)
-from .plotting import PlotManager, save_style
+from .plotting import PlotManager, PlotGrid, plot_grid, save_style
 from .series import Series
 from .fitshorthands import (fit_rabi, fit_decaying_cosine,
                              fit_lorentzian, fit_gaussian, fit_exp_decay,
@@ -71,6 +71,14 @@ def help_repl():
   pm1.autoscale()                 reset xlim/ylim to auto
   pm1.clear()                     remove all series and reset to defaults
   pm1.ax / pm1.fig                escape hatch to raw matplotlib objects
+
+-- Subplots ----------------------------------------------------------------
+  grid = plot_grid(2, 2, sharex=True, sharey=True, title='Overview')
+                                   panels register as pm1, pm2, ... (row-major)
+  grid[0, 0] is pm1                index by (row, col) or flat index
+  grid.legend()                    one shared legend built from all panels
+  grid.title = 'Overview'          fig.suptitle
+  grid.export('combined.pdf')      save the whole combined figure
 
 -- Series (pm1.pmt0, pm1.s1, ...) ----------------------------------------
   pm1.pmt0.color      = 'red'     change color (redraws immediately)
@@ -185,6 +193,9 @@ __all__ = [
     "fit_quadratic",
     # plotting
     "PlotManager",
+    "PlotGrid",
+    "plot_grid",
+    "Series",
     "save_style",
     # session management
     "save_session",

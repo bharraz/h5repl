@@ -106,14 +106,18 @@ class PlotManager:
         'xscale': 1.0, 'yscale': 1.0, 'xunit': None, 'yunit': None,
     }
 
-    def __init__(self):
+    def __init__(self, fig=None, ax=None):
         object.__setattr__(self, '_disp', dict(self._DISPLAY_DEFAULTS))
         object.__setattr__(self, '_sc',   dict(self._SCALE_DEFAULTS))
 
-        fig, ax = plt.subplots(figsize=(10, 6))
+        owns_fig = fig is None
+        if owns_fig:
+            fig, ax = plt.subplots(figsize=(10, 6))
+        object.__setattr__(self, '_owns_fig', owns_fig)
         object.__setattr__(self, 'fig', fig)
         object.__setattr__(self, 'ax', ax)
-        fig.canvas.mpl_connect('close_event', self._on_close)
+        if owns_fig:
+            fig.canvas.mpl_connect('close_event', self._on_close)
         object.__setattr__(self, 'series', {})
         object.__setattr__(self, '_legend', False)
         object.__setattr__(self, '_color_idx', 0)
@@ -331,3 +335,120 @@ class PlotManager:
         if disp: parts.append(str(disp))
         if sc:   parts.append(str(sc))
         return f"PlotManager({', '.join(parts)})"
+
+
+class PlotGrid:
+    """
+    A grid of PlotManagers sharing one matplotlib figure.
+
+    Each panel is a normal PlotManager, registered in PLOT_MANAGERS exactly
+    like a single quickplot() figure -- reference panels directly as pm1,
+    pm2, ... with the full PlotManager API (title, add_series, fits, etc).
+    This object is only a convenience wrapper for whole-figure operations.
+
+        grid = plot_grid(2, 2)
+        pm1.add_series(s1)          # top-left panel
+        pm2.add_series(s2)          # top-right panel
+        grid[0, 0] is pm1           # True
+        grid.legend()               # one shared legend for the whole figure
+        grid.title = 'Overview'      # fig.suptitle
+        grid.export('combined.pdf')
+    """
+
+    def __init__(self, fig, pms, nrows, ncols):
+        object.__setattr__(self, 'fig', fig)
+        object.__setattr__(self, '_pms', pms)   # flat list, row-major
+        object.__setattr__(self, '_nrows', nrows)
+        object.__setattr__(self, '_ncols', ncols)
+
+    def __getitem__(self, idx):
+        if isinstance(idx, tuple):
+            r, c = idx
+            return self._pms[r * self._ncols + c]
+        return self._pms[idx]
+
+    def __iter__(self):
+        return iter(self._pms)
+
+    def __len__(self):
+        return len(self._pms)
+
+    def __setattr__(self, name, value):
+        if name == 'title':
+            self.fig.suptitle(value)
+            self.fig.canvas.draw()
+            self.fig.canvas.flush_events()
+        else:
+            object.__setattr__(self, name, value)
+
+    def legend(self, loc='upper right'):
+        """
+        Build one shared legend for the whole figure from every panel's
+        series, removing any per-panel legends already drawn.
+        """
+        handles, labels = [], []
+        seen = set()
+        for pm in self._pms:
+            h, l = pm.ax.get_legend_handles_labels()
+            for hh, ll in zip(h, l):
+                if ll not in seen:
+                    seen.add(ll)
+                    handles.append(hh)
+                    labels.append(ll)
+            existing = pm.ax.get_legend()
+            if existing is not None:
+                existing.remove()
+        if handles:
+            self.fig.legend(handles, labels, loc=loc)
+        self.fig.canvas.draw()
+        self.fig.canvas.flush_events()
+
+    def export(self, filename=None, dest=None, dpi=300):
+        """Save the whole combined figure. Same conventions as PlotManager.export()."""
+        return self._pms[0].export(filename=filename, dest=dest, dpi=dpi)
+
+    def _on_close(self, _):
+        for pm in self._pms:
+            key = next((k for k, v in _globals.PLOT_MANAGERS.items() if v is pm), None)
+            if key is not None:
+                del _globals.PLOT_MANAGERS[key]
+        print("\nGrid closed.")
+
+    def __repr__(self):
+        names = [k for k, v in _globals.PLOT_MANAGERS.items() if v in self._pms]
+        return f"PlotGrid({self._nrows}x{self._ncols}, panels={names})"
+
+
+def plot_grid(nrows=1, ncols=1, sharex=False, sharey=False, figsize=None, title=None):
+    """
+    Create a grid of PlotManagers sharing one figure.
+
+        grid = plot_grid(2, 2)
+        pm1.add_series(s)      # top-left
+        pm2.add_series(s2)     # top-right
+        grid.legend()          # one shared legend
+        grid.title = 'Overview'
+
+    Panels are registered as pm1, pm2, ... in row-major order -- reference
+    them directly, same as any quickplot() figure. sharex/sharey link axis
+    limits across panels.
+    """
+    if figsize is None:
+        figsize = (5 * ncols, 4 * nrows)
+    fig, axes = plt.subplots(nrows, ncols, figsize=figsize,
+                              sharex=sharex, sharey=sharey, squeeze=False)
+    pms = []
+    for ax in axes.flat:
+        pm = PlotManager(fig=fig, ax=ax)
+        name = f"pm{len(_globals.PLOT_MANAGERS) + 1}"
+        _globals.PLOT_MANAGERS[name] = pm
+        pms.append(pm)
+
+    grid = PlotGrid(fig, pms, nrows, ncols)
+    fig.canvas.mpl_connect('close_event', grid._on_close)
+    if title:
+        fig.suptitle(title)
+
+    names = [k for k, v in _globals.PLOT_MANAGERS.items() if v in pms]
+    print(f"Created grid with panels: {names}")
+    return grid

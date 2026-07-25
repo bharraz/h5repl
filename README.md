@@ -197,8 +197,8 @@ Legend and adding data:
 
 ```python
 pm1.legend()                  # show legend; unlabeled series get their nickname
-pm1.autoscale()               # reset xlim/ylim to auto
-pm1.add(x, y, label='ref', color='gray')    # add an extra series
+pm1.autoscale()                # reset xlim/ylim to auto
+pm1.add_series(Series(x, y, label='ref', color='gray'))    # add a pre-built Series
 pm1.remove_series('ref')      # remove a series by name
 ```
 
@@ -207,6 +207,23 @@ Escape hatches to raw matplotlib:
 ```python
 pm1.ax                        # matplotlib Axes
 pm1.fig                       # matplotlib Figure
+```
+
+### Subplots
+
+`plot_grid` creates several `PlotManager`s sharing one figure. Each panel is a normal `PlotManager` — registered as `pm1`, `pm2`, ... just like a single `quickplot()` figure, with the full API (`title`, `add_series`, fit overlays, etc). The returned `PlotGrid` is a thin convenience wrapper for whole-figure operations.
+
+```python
+grid = plot_grid(2, 2, sharex=True, sharey=True, title='Overview')
+
+pm1.add_series(s1)            # top-left panel
+pm2.add_series(s2)            # top-right panel
+pm1.title = 'Panel A'
+pm2.title = 'Panel B'
+
+grid[0, 0] is pm1              # True — index by (row, col) or flat index
+grid.legend()                  # one shared legend built from every panel's series
+grid.export('combined.pdf')    # saves the whole figure
 ```
 
 ### Series properties
