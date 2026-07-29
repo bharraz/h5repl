@@ -148,6 +148,17 @@ def quickplot(file_id, pmt=None, fit=None, title=None,
         x_name, x_raw = names[0], scan_axes[names[0]]
         print(f"2D scan - axes: {names}. Plotting '{x_name}' only for now.")
 
+    # datasets/scan holds the planned range; truncate to what was actually
+    # recorded if the experiment stopped early (num_points from raw data).
+    try:
+        n_recorded = int(f['num_points'][()])
+    except Exception:
+        n_recorded = len(x_raw)
+    if len(x_raw) != n_recorded:
+        print(f"Warning: scan axis '{x_name}' has {len(x_raw)} points but only "
+              f"{n_recorded} were recorded (experiment stopped early?). Truncating.")
+        x_raw = x_raw[:n_recorded]
+
     # -- create new figure -----------------------------------------------------
     mgr_name = f"pm{len(_globals.PLOT_MANAGERS) + 1}"
     mgr = PlotManager()

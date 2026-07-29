@@ -100,12 +100,14 @@ class GoldH5File(h5py.File):
             print(e)
             print("Couldn't find expid")
 
+        self._num_points = None
         try:
             THRESHOLD = 1
             Y_MAX = 1
 
             raw_counts = h5utils.get_dataset(self, "raw")
             num_points = len(raw_counts)
+            self._num_points = num_points
             num_shots  = len(raw_counts["0"])
             num_pmt    = len(raw_counts["0"][0])
 
@@ -153,6 +155,17 @@ class GoldH5File(h5py.File):
                     pass
         except Exception:
             pass
+
+        # datasets/scan holds the *planned* range; if the experiment stopped
+        # early, the actual recorded data (num_points, from raw) is shorter.
+        # Truncate the scan axis to match so x/y arrays stay aligned everywhere.
+        if self._scan_x is not None and self._num_points is not None:
+            if len(self._scan_x) != self._num_points:
+                print(f"Warning: scan axis '{self._scan_name}' has {len(self._scan_x)} points "
+                      f"but only {self._num_points} were recorded (experiment stopped early?). "
+                      f"Truncating scan axis to match.")
+                self._scan_x = self._scan_x[:self._num_points]
+
         # public alias so users can write f.x instead of f._scan_x
         object.__setattr__(self, 'x', self._scan_x)
 
