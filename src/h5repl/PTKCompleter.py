@@ -1,53 +1,175 @@
 """Prompt toolkit (PTK) based autocomplete for expanded functionality"""
 import re
+import inspect
 import h5py
-import numpy as np
-import matplotlib.pyplot as plt
 from prompt_toolkit.completion import Completer, Completion
-from . import h5utils, globals
+from . import globals, session as _session
 
-#TODO:
-# After making an indexer, allow to autocomplete from indexed h5 files if symbol is 'open'
 
 class PTKCompleter(Completer):
     def __init__(self, variables):
-        """Variables is a list of relevant symbols to be considered for autocomplete"""
+        # variables is the live REPL locals dict, not just keys
         self.variables = variables
-   
+
     def get_completions(self, document, complete_event):
-        """Handles custom tab-autocompletion"""
-        # Sometimes check full line
         full_line = document.text_before_cursor
-        # Sometimes only autocomplete on the end part of the string after a \s ( [ or , 
-        last_symbol = re.split(r"\s|\(|,|\[", full_line)[-1] 
-
+        last_token = re.split(r'[\s(,\[{]', full_line)[-1]  # token after last delimiter
         options = []
-        # Autocomplete with dataset names if doing get_dataset
-        matches = re.match(r"get_dataset\(\s*([^,]+?)\s*,\s*(.*?)\s*$", full_line)
-        if matches:
-            try:
-                arg1, arg2 = matches.groups()
-                file = globals.OPEN_FILES[arg1]
-                # Open the file and get the names of all matching datasets
-                def find_matching_datasets(name):
-                    if isinstance(file[name], h5py.Dataset) and name.startswith(arg2):
-                        options.append(name)
 
-                file.visit(find_matching_datasets)
-            except:
-                print("\nCan't autocomplete, likely an incorrect filename or unopened file")
-        elif last_symbol.startswith('np'): 
-            # np autocomplete
-            options += [name for name in dir(np) if name.startswith(last_symbol)]
-        elif last_symbol.startswith('plt'):  
-            # matplotlib.pyplot autocomplete
-            options += [name for name in dir(plt) if name.startswith(last_symbol)]
+        # fix={...} dict key completion — exclusive, since inside a fix={} literal
+        # the enclosing call's own kwargs/bare names aren't valid completions here
+        fix_opts = self._fix_key_completions(full_line, last_token)
+        if fix_opts:
+            for opt in sorted(set(fix_opts)):
+                yield Completion(opt, start_position=-len(last_token))
+            return
+
+        # session name completion — accumulates into options, falls through to kwargs below
+        m = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
+        if m:
+            prefix = m.group(1)
+            names = list(_session._BUILTIN_SESSIONS)
+            sf = _session._resolve_sessions_file()
+            if sf.exists():
+                names += re.findall(r'(?m)^def (\w+)\(\):', sf.read_text())
+            options += [n for n in names if n.startswith(prefix)]
+
+        # dataset name completion inside get_dataset(file, <TAB>)
+        m = re.match(r'get_dataset\(\s*([^,]+?)\s*,\s*["\']?(.*?)["\']?\s*$', full_line)
+        if m:
+            file_id, ds_prefix = m.group(1).strip('"\''), m.group(2)
+            f = globals.OPEN_FILES.get(file_id)
+            if f:
+                def _collect(name, obj):
+                    if isinstance(obj, h5py.Dataset):
+                        if name.startswith(ds_prefix):
+                            options.append(name)
+                try:
+                    f.visititems(_collect)
+                except Exception:
+                    pass
+
+        elif '.' in last_token:
+            # dotted access: resolve left side, dir() the result
+            obj_expr, attr_prefix = last_token.rsplit('.', 1)
+            obj = self._resolve(obj_expr)
+            if obj is not None:
+                attrs = self._attrs(obj)
+                options += [f"{obj_expr}.{a}" for a in attrs if a.startswith(attr_prefix)]
+
         else:
-            # Custom autocomplete options
-            options += [name for name in self.variables if name.startswith(last_symbol)]
-            options += [name for name in globals.OPEN_FILES.keys() if name.startswith(last_symbol)]
-         
-        # Filter out symbols starting with an underscore
-        filtered_options = [option for option in set(options) if not option.startswith('_')]
-        for option in sorted(filtered_options):
-            yield Completion(option, start_position=-len(last_symbol))
+            # bare token: all REPL names + open files + plot managers
+            universe = set(self.variables) | set(globals.OPEN_FILES) | set(globals.PLOT_MANAGERS)
+            options += [n for n in universe if n.startswith(last_token)]
+
+        # kwarg completions: when inside a function call and not already past the '='
+        if '=' not in last_token:
+            options += self._kwarg_completions(full_line, last_token)
+
+        seen = set()
+        for opt in sorted(options):
+            if opt not in seen:
+                seen.add(opt)
+                yield Completion(opt, start_position=-len(last_token))
+
+    def _kwarg_completions(self, full_line, partial):
+        """Return 'name=' completions when the cursor is inside a function call."""
+        # find the innermost unclosed '('
+        depth = 0
+        call_start = -1
+        for i in range(len(full_line) - 1, -1, -1):
+            c = full_line[i]
+            if c == ')':
+                depth += 1
+            elif c == '(':
+                if depth == 0:
+                    call_start = i
+                    break
+                depth -= 1
+        if call_start < 0:
+            return []
+
+        # function expression is the identifier (or dotted name) immediately before '('
+        fn_expr = full_line[:call_start].rstrip()
+        m = re.search(r'[\w.]+$', fn_expr)
+        if not m:
+            return []
+
+        obj = self._resolve(m.group(0))
+        if not callable(obj):
+            return []
+
+        try:
+            sig = inspect.signature(obj)
+        except Exception:
+            return []
+
+        return [
+            f'{name}='
+            for name, p in sig.parameters.items()
+            if p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+            and name != 'self'
+            and name.startswith(partial)
+        ]
+
+    def _fix_key_completions(self, full_line, partial):
+        """Complete fix={...} dict keys with the enclosing call's own param names,
+        e.g. fit_rabi(s, fix={'<TAB> -> 'amp':, 'omega':, 'offset':
+        """
+        m = re.search(r'fix\s*=\s*\{[^{}]*$', full_line)
+        if not m:
+            return []
+
+        # find the innermost unclosed '(' before the 'fix=' — that's the enclosing call
+        prefix_line = full_line[:m.start()]
+        depth = 0
+        call_start = -1
+        for i in range(len(prefix_line) - 1, -1, -1):
+            c = prefix_line[i]
+            if c == ')':
+                depth += 1
+            elif c == '(':
+                if depth == 0:
+                    call_start = i
+                    break
+                depth -= 1
+        if call_start < 0:
+            return []
+
+        fn_expr = prefix_line[:call_start].rstrip()
+        mm = re.search(r'[\w.]+$', fn_expr)
+        if not mm:
+            return []
+
+        obj = self._resolve(mm.group(0))
+        if not callable(obj):
+            return []
+        try:
+            sig = inspect.signature(obj)
+        except Exception:
+            return []
+
+        key_prefix = partial.lstrip('\'"')
+        return [
+            f"'{name}':"
+            for name, p in sig.parameters.items()
+            if name not in ('series', 'fix', 'self')
+            and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+            and name.startswith(key_prefix)
+        ]
+
+    def _resolve(self, expr):
+        """Eval an expression in the live REPL namespace; return None on failure."""
+        try:
+            return eval(expr, dict(self.variables))  # snapshot to avoid mutation
+        except Exception:
+            return None
+
+    def _attrs(self, obj):
+        """Non-private attributes of obj; augmented for PlotManager virtual attrs."""
+        from .plotting import PlotManager
+        attrs = {a for a in dir(obj) if not a.startswith('_')}  # skip private
+        if isinstance(obj, PlotManager):
+            # __getattr__ exposes these but dir() misses them
+            attrs |= set(PlotManager._DISPLAY) | set(PlotManager._SCALE) | set(obj.series)
+        return attrs

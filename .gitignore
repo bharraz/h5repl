@@ -30,6 +30,14 @@ htmlcov/
 .coverage
 .tox/
 
+# Ignore user output files but keep the directory structure and sessions
+user/figures/*
+user/fits/*
+!user/figures/.gitkeep
+!user/fits/.gitkeep
+user/startup.py
+user/sessions.py
+
 # Ignore user/editor files
 *.swp
 *.swo
@@ -37,3 +45,6 @@ htmlcov/
 *.tmp
 .idea/
 .vscode/
+
+*.pdf
+*.yaml

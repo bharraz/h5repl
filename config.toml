@@ -1,2 +1,19 @@
+# Working directory for sessions, figures, and fits.
+# Can be an absolute path or relative to the repo root.
+user_dir = "./user"
+
+# Override the figures output directory (defaults to user_dir/figures).
+# figures_dir = "/path/to/my/figures"
+
 [file_directories]
-base_directory = "C:\\Users\\bahaa\\Documents\\WS\\h5util\\data"
+data = "./data"
+
+[styles.publication]
+"font.size" = 11
+"axes.linewidth" = 1.0
+"lines.linewidth" = 1.5
+"xtick.major.width" = 1.0
+"ytick.major.width" = 1.0
+"xtick.direction" = "in"
+"ytick.direction" = "in"
+"legend.frameon" = false

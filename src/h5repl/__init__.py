@@ -1,1 +1,204 @@
 # h5repl package init
+
+from .h5utils import h5open, browse, get_dataset, h5print, h5close, h5close_all
+from .globals import OPEN_FILES, PLOT_MANAGERS, CFG, USER_DIR
+from .fitutils import (FitObj, FitResult, Unc,
+                       linear, quadratic, exp_decay,
+                       lorentzian, gaussian,
+                       sine_fun, rabi_flop, decaying_cosine, rabi_spectroscopy,
+                       ramsey_phase, ramsey_time)
+from .plotting import PlotManager, PlotGrid, plot_grid, save_style
+from .series import Series
+from .fitshorthands import (fit_rabi, fit_decaying_cosine,
+                             fit_lorentzian, fit_gaussian, fit_exp_decay,
+                             fit_ramsey_phase, fit_ramsey_time, fit_spectroscopy,
+                             fit_linear, fit_quadratic)
+from .session import save_session, load_session, list_sessions, clear_history
+from . import h5utils
+from . import fitutils
+from . import fitshorthands
+from . import globals
+from . import plotting
+from . import series
+from . import session
+from .cli import main
+
+
+def help_repl():
+    """Print the h5repl quick reference."""
+    print("""
+==========================================================================
+                       h5repl  quick reference
+==========================================================================
+
+-- Files ------------------------------------------------------------------
+  h5open(103550)                  open file by ID (searches config dirs)
+  h5open(103550, nickname='rabi') open under custom name
+  browse()                        open a file-browser dialog to pick an .h5 file
+  browse(nickname='ref')          open under custom name
+  h5print(103550)                 explore file structure
+  h5print(103550, start_root='scan')            show subtree
+  get_dataset(103550, 'duration') read a dataset by name (recursive search)
+  h5close(103550)                 close one file
+  h5close_all()                   close all files
+
+-- Building a Series --------------------------------------------------------
+  f = h5open(103550)
+  x = get_dataset(f, 'duration')
+  y = get_dataset(f, 'signal')
+  s = Series(x, y, yerr=None, label='signal')
+
+-- Plotting ---------------------------------------------------------------
+  pm1 = PlotManager()              new figure, registers as pm1, pm2, ...
+  pm1.add_series(s)                add a pre-built Series
+  pm1.add_series(s, name='ref')    same with an explicit name
+
+-- PlotManager (pm1, pm2, ...) -------------------------------------------
+  pm1.title  = 'My scan'          set title
+  pm1.xlabel = 'duration (us)'    set axis labels
+  pm1.grid   = True               toggle grid
+  pm1.xlim   = (0, 120)           set axis limits
+  pm1.xscale = 1e6                rescale all x data (triggers full replot)
+  pm1.xunit  = 'us'               update unit in xlabel (auto-rebuilds label)
+  pm1.legend()                    show legend (auto-labels unlabeled series)
+  pm1.autoscale()                 reset xlim/ylim to auto
+  pm1.clear()                     remove all series and reset to defaults
+  pm1.ax / pm1.fig                escape hatch to raw matplotlib objects
+
+-- Subplots ----------------------------------------------------------------
+  grid = plot_grid(2, 2, sharex=True, sharey=True, title='Overview')
+                                   panels register as pm1, pm2, ... (row-major)
+  grid[0, 0] is pm1                index by (row, col) or flat index
+  grid.legend()                    one shared legend built from all panels
+  grid.title = 'Overview'          fig.suptitle
+  grid.export('combined.pdf')      save the whole combined figure
+
+-- Series (pm1.s1, pm1.ref, ...) ----------------------------------------
+  pm1.s1.color      = 'red'       change color (redraws immediately)
+  pm1.s1.linestyle  = '--'        line style (None = markers only)
+  pm1.s1.marker     = 's'         marker shape
+  pm1.s1.markersize = 8           marker size
+  pm1.s1.alpha      = 0.5         transparency
+  pm1.s1.label      = 'data'      update legend entry
+  pm1.s1.visible    = False       hide/show series
+  pm1.add_series(s)                add a pre-built Series (from arithmetic, etc.)
+  pm1.add_series(s, name='ref')    same with an explicit name
+  pm1.remove_series('s1')          remove a named series
+
+-- Fitting ----------------------------------------------------------------
+  fit = FitObj(sine_fun)         create a fit object
+  fit.p0.amp    = 0.4             set initial guess
+  fit.p0.freq   = 1.0
+  fit.bounds.amp = (0, 1)         set bounds (optional)
+  fit.fix(offset=0.5)             hold a parameter constant
+  result = pm1.s1.run_fit(fit)    fit and attach to series (auto-replots)
+  print(result)                   show all params with uncertainties
+  result.amp                      access a param as Unc
+  result.amp.a / result.amp.s     float value / std dev
+
+  Built-in fit functions (use with FitObj):
+    linear(x, slope, intercept)
+    quadratic(x, scale, center, offset)
+    exp_decay(x, floor, amp, tau)
+    lorentzian(x, center, floor, amp, fwhm)
+    gaussian(x, center, floor, amp, fwhm)
+    sine_fun(x, amp, freq, phi, offset)
+    rabi_flop(x, amp, omega, offset)
+    decaying_cosine(x, amp, omega, phi, tau, offset)
+    rabi_spectroscopy(x, pulse_duration, scaling, floor, omega, center_freq)
+    ramsey_phase(x, amp, offset, delay)
+    ramsey_time(x, amp, omega, offset, delay, tau)
+
+  Fit shorthands (auto-guess p0, dotted line, returns FitResult):
+    fit_rabi(series, *, amp, omega, offset)
+    fit_decaying_cosine(series, *, amp, omega, phi, tau, offset)
+    fit_lorentzian(series, *, center, floor, amp, fwhm)
+    fit_gaussian(series, *, center, floor, amp, fwhm)
+    fit_exp_decay(series, *, floor, amp, tau)
+    fit_ramsey_phase(series, *, amp, offset, delay)
+    fit_ramsey_time(series, *, amp, omega, offset, delay, tau)
+    fit_spectroscopy(series, [pulse_duration], *, scaling, floor, omega, center_freq)
+    fit_linear(series, *, slope, intercept)
+    fit_quadratic(series, *, scale, center, offset)
+  -> All keyword args are optional p0 overrides (None = auto-guessed from data)
+  -> Type  fit_rabi;  for full docstring with usage examples
+
+-- Sessions ---------------------------------------------------------------
+  save_session(my_session)        save current REPL history to a session
+  load_session(my_session)        replay a saved session
+  list_sessions()                 show all saved sessions
+  clear_history()                 wipe the current session log
+
+-- Tips -------------------------------------------------------------------
+  * Tab-completion works for everything, including pm.s1.<TAB>
+  * Add ; to see docs for anything: h5open;  pm1.s1;
+  * A bare function name with required args also shows its docstring
+  * Closing a plot window auto-removes its PlotManager
+  * open(103550) is silently rewritten to h5open(103550)
+""")
+
+
+__all__ = [
+    # h5 utilities
+    "h5open",
+    "browse",
+    "get_dataset",
+    "h5print",
+    "h5close",
+    "h5close_all",
+    "OPEN_FILES",
+    "PLOT_MANAGERS",
+    "CFG",
+    "USER_DIR",
+    # fitting infrastructure
+    "FitObj",
+    "FitResult",
+    "Unc",
+    # general curves
+    "linear",
+    "quadratic",
+    "exp_decay",
+    # peaks
+    "lorentzian",
+    "gaussian",
+    # Rabi
+    "sine_fun",
+    "rabi_flop",
+    "decaying_cosine",
+    "rabi_spectroscopy",
+    # Ramsey
+    "ramsey_phase",
+    "ramsey_time",
+    # fit shorthands
+    "fit_rabi",
+    "fit_decaying_cosine",
+    "fit_lorentzian",
+    "fit_gaussian",
+    "fit_exp_decay",
+    "fit_ramsey_phase",
+    "fit_ramsey_time",
+    "fit_spectroscopy",
+    "fit_linear",
+    "fit_quadratic",
+    # plotting
+    "PlotManager",
+    "PlotGrid",
+    "plot_grid",
+    "Series",
+    "save_style",
+    # session management
+    "save_session",
+    "load_session",
+    "list_sessions",
+    "clear_history",
+    # help
+    "help_repl",
+    # submodules (for advanced use)
+    "h5utils",
+    "fitutils",
+    "fitshorthands",
+    "globals",
+    "plotting",
+    "series",
+    "session",
+]
