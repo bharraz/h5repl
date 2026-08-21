@@ -44,6 +44,14 @@ class H5REPL(code.InteractiveConsole):
 
         super().__init__(locals=self.variables)
 
+    @staticmethod
+    def _show_doc(expr, obj):
+        """Print the docstring (or repr, for non-callables) of an evaluated expression."""
+        doc = inspect.getdoc(obj) if callable(obj) else None
+        print(f"\n{expr}:\n{'-'*40}")
+        print(doc if doc else repr(obj))
+        print('-'*40 + '\n')
+
     def preprocess(self, source):
         """Preprocesses source string before it is sent to runsource"""
         source = source.strip()
@@ -71,10 +79,7 @@ class H5REPL(code.InteractiveConsole):
             expr = stripped.rstrip(';').strip()
             try:
                 obj = eval(expr, self.locals)
-                doc = inspect.getdoc(obj) if callable(obj) else None
-                print(f"\n{expr}:\n{'-'*40}")
-                print(doc if doc else repr(obj))
-                print('-'*40 + '\n')
+                self._show_doc(expr, obj)
             except Exception:
                 pass
             return False
@@ -89,7 +94,9 @@ class H5REPL(code.InteractiveConsole):
                                 and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)]
                     if not required:                                 # zero-arg callable -> run it
                         obj()
-                        return False
+                    else:                                            # needs args -> show docs
+                        self._show_doc(source, obj)
+                    return False
             except Exception:
                 pass
 

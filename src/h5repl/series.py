@@ -38,19 +38,20 @@ class Series:
         s.fit_color     = 'red'        # override fit line color (default: same as series)
         s.fit_alpha     = 1.0          # override fit line alpha
         s.fit_linestyle = '--'         # default '--'
+        s.fit_label     = 'J = 3.1 Hz' # override fit line legend text (default: '<label> (fit)')
     """
 
     _PLOT_ATTRS = frozenset({
         'x', 'y', 'yerr', 'label', 'color', 'alpha', 'visible',
         'linestyle', 'marker', 'markersize', 'capsize',
         'fit', 'fmt', 'kwargs',
-        'fit_color', 'fit_alpha', 'fit_linestyle',
+        'fit_color', 'fit_alpha', 'fit_linestyle', 'fit_label',
     })
 
     def __init__(self, x, y, yerr=None, label=None, color=None, alpha=None,
                  visible=True, linestyle=None, marker=None, markersize=None,
                  capsize=3, fit=None, fmt='o', fit_color=None, fit_alpha=None,
-                 fit_linestyle='--', **kwargs):
+                 fit_linestyle='--', fit_label=None, **kwargs):
         object.__setattr__(self, '_manager', None)
         self.visible = visible
         self.x = np.asarray(x)
@@ -68,6 +69,7 @@ class Series:
         self.fit_color = fit_color
         self.fit_alpha = fit_alpha
         self.fit_linestyle = fit_linestyle
+        self.fit_label = fit_label
         self.kwargs = kwargs
 
     def __setattr__(self, name, value):
@@ -79,6 +81,16 @@ class Series:
                     mgr.replot()
             except AttributeError:
                 pass
+
+    def __getattr__(self, name):
+        # fall through to the attached fit's parameters: s.omega -> s.fit.omega
+        fit = self.__dict__.get('fit')
+        if fit is not None:
+            from .fitutils import FitObj, FitResult
+            target = fit.result if isinstance(fit, FitObj) else fit
+            if isinstance(target, FitResult) and name in target.params:
+                return target.params[name]
+        raise AttributeError(f"'Series' object has no attribute '{name}'")
 
     def plot(self, ax, xscale=1.0, yscale=1.0):
         """Render this series onto ax, applying scale factors."""
@@ -120,7 +132,8 @@ class Series:
 
     def _plot_fit(self, ax, xscale=1.0, yscale=1.0):
         from .fitutils import FitObj, FitResult
-        fit_label = f"{self.label} (fit)" if self.label else "fit"
+        fit_label = self.fit_label if self.fit_label is not None else \
+            (f"{self.label} (fit)" if self.label else "fit")
         fit_color = self.fit_color if self.fit_color is not None else self.color  # inherit color
 
         if isinstance(self.fit, FitObj) and self.fit.result is not None:   # FitObj wrapper

@@ -13,8 +13,16 @@ class PTKCompleter(Completer):
 
     def get_completions(self, document, complete_event):
         full_line = document.text_before_cursor
-        last_token = re.split(r'[\s(,\[]', full_line)[-1]  # token after last delimiter
+        last_token = re.split(r'[\s(,\[{]', full_line)[-1]  # token after last delimiter
         options = []
+
+        # fix={...} dict key completion — exclusive, since inside a fix={} literal
+        # the enclosing call's own kwargs/bare names aren't valid completions here
+        fix_opts = self._fix_key_completions(full_line, last_token)
+        if fix_opts:
+            for opt in sorted(set(fix_opts)):
+                yield Completion(opt, start_position=-len(last_token))
+            return
 
         # session name completion — accumulates into options, falls through to kwargs below
         m = re.match(r'(?:load|save)_session\(\s*["\']?(.*?)["\']?\s*$', full_line)
@@ -102,6 +110,52 @@ class PTKCompleter(Completer):
             if p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
             and name != 'self'
             and name.startswith(partial)
+        ]
+
+    def _fix_key_completions(self, full_line, partial):
+        """Complete fix={...} dict keys with the enclosing call's own param names,
+        e.g. fit_rabi(s, fix={'<TAB> -> 'amp':, 'omega':, 'offset':
+        """
+        m = re.search(r'fix\s*=\s*\{[^{}]*$', full_line)
+        if not m:
+            return []
+
+        # find the innermost unclosed '(' before the 'fix=' — that's the enclosing call
+        prefix_line = full_line[:m.start()]
+        depth = 0
+        call_start = -1
+        for i in range(len(prefix_line) - 1, -1, -1):
+            c = prefix_line[i]
+            if c == ')':
+                depth += 1
+            elif c == '(':
+                if depth == 0:
+                    call_start = i
+                    break
+                depth -= 1
+        if call_start < 0:
+            return []
+
+        fn_expr = prefix_line[:call_start].rstrip()
+        mm = re.search(r'[\w.]+$', fn_expr)
+        if not mm:
+            return []
+
+        obj = self._resolve(mm.group(0))
+        if not callable(obj):
+            return []
+        try:
+            sig = inspect.signature(obj)
+        except Exception:
+            return []
+
+        key_prefix = partial.lstrip('\'"')
+        return [
+            f"'{name}':"
+            for name, p in sig.parameters.items()
+            if name not in ('series', 'fix', 'self')
+            and p.kind not in (p.VAR_POSITIONAL, p.VAR_KEYWORD)
+            and name.startswith(key_prefix)
         ]
 
     def _resolve(self, expr):
